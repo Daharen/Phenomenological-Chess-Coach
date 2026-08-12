@@ -18,3 +18,9 @@ runs/
 logs/
 cache/
 games/
+
+*.lnk
+
+*.tmp
+
+COMMIT_MSG*
