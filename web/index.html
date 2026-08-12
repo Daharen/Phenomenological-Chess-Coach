@@ -354,6 +354,18 @@ function renderTurn(t){
     html+=`<div class="cand" style="border-color:#28402f"><b>Deterministic eval</b> <span class="tag">module 1 · material safety (1-ply)</span>
       <div class="traj">${dl}</div><div class="traj muted">${cand}</div></div>`;
   }
+  // deterministic evaluator -- module 2: fork / double-attack threats (2-ply)
+  if(t.threats){
+    const d=t.threats; let dl='';
+    const s=d.chosen_threat?escape(d.chosen_threat.sentence):('allows ~'+d.chosen_cp+'cp');
+    if(d.action==='re-picked') dl=`<span class="pill blunder">fork veto</span> the pick walks into a fork (~${d.chosen_cp}cp); re-picked a safer move (~${d.safe_cp}cp).`;
+    else if(d.action==='warned') dl=`<span class="pill mistake">fork warning</span> ${s} — a sibling avoids it (~${d.safe_cp}cp).`;
+    else if(d.action==='unavoidable') dl=`<span class="pill mistake">forced into a fork</span> ${s} (every candidate allows it).`;
+    else dl=`<span class="pill best">no fork</span> the chosen move doesn't walk into a double attack.`;
+    const cand=(d.per_candidate||[]).map(c=>`<span class="mono">${c.san}</span> <span class="muted">${c.threat_cp>0?('allows '+c.threat_cp+'cp'):'safe'}</span>`).join(' &nbsp;·&nbsp; ');
+    html+=`<div class="cand" style="border-color:#3a2c40"><b>Deterministic eval</b> <span class="tag">module 2 · fork / double-attack (2-ply)</span>
+      <div class="traj">${dl}</div><div class="traj muted">${cand}</div></div>`;
+  }
   // sandbox lines (the established move trees) -- click to step through on the board
   const lines=(t.sandbox&&t.sandbox.lines)||[];
   LASTLINES=lines; LASTREJ=(t.rejected||[]); LASTFENB=t.fen_before; LASTENGINE=t.sandbox_engine||'stockfish';

@@ -74,10 +74,25 @@ enlarging the proposer's prompt.
     optional). This also sharpens the existing hanging-piece / fork / sacrifice
     detectors that share `see`.
 
+- **Module 2 — fork / double-attack threats (`app/engine/threats.py`).** Looks
+  one ply deeper than module 1. For each candidate, in the position *after* our
+  move, it scans every opponent reply for a single move that attacks two of our
+  pieces at once (knight hitting king + rook, queen double attack, pawn fork)
+  where we can save only one, and estimates the material lost next move (via SEE).
+  It is deliberately conservative: the forking piece must land safely (if we can
+  just capture it for SEE ≥ 0 the fork is ignored), and each counted target must
+  be genuinely winnable — undefended, the king (a check we must answer), or an
+  up-trade. Check-forks lose the best *other* target; quiet double attacks lose
+  the second-best. **Default action is WARN, not veto** (`threats.veto` opts in),
+  because fork judgement has defensive nuance a 2-ply scan can miss — a false
+  alarm in a teaching tool is worse than silence. Does *not* yet model discovered
+  attacks by a non-moving piece, our counter-threats, or pins that freeze the
+  forker. Shown in the UI as its own safety panel; per-candidate `threat_cp`.
+
 ## Planned (each a separate module, shipped one at a time)
 
 - **Further deterministic evaluator modules** (added individually):
-  pin-aware capture legality, 1-ply fork/skewer/discovered threats,
+  pin-aware capture legality, skewers, discovered-attack threats,
   net-material swing, king-line attacker scan, back-rank, … Each emits a typed
   fact `{type, squares, severity, one-line phenomenological sentence, fact_id}`.
 - **Appeal step:** after a move is selected, the evaluator flags it "bad because

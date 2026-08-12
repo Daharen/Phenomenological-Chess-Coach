@@ -116,6 +116,13 @@ DEFAULTS: dict[str, Any] = {
     # sibling candidate would keep (guided/assist), or warn (autonomous).
     "deteval": {"enabled": True, "hang_threshold_cp": 100, "veto_in_autonomous": False},
 
+    # Deterministic evaluator module 2 = fork / double-attack threats (2-ply).
+    # Flags a chosen move that walks into a fork a safe sibling would avoid. Warn
+    # by default (fork judgement has defensive nuance a shallow scan can miss);
+    # set veto=true to also re-pick the safe sibling in guided/assist.
+    "threats": {"enabled": True, "warn_threshold_cp": 150, "veto": False,
+                "veto_in_autonomous": False},
+
     "server": {
         "host": "127.0.0.1",
         "port": 7801,

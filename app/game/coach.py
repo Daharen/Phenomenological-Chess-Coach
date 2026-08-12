@@ -223,6 +223,7 @@ class ChessCoach:
             "viable": [cand], "rejected": [], "illegal_attempts": [],
             "sandbox": {"engine": sb_engine, "lines": [], "ranking": [], "best_uci": forced.uci()},
             "deteval": None,
+            "threats": None,
             "concepts": concepts, "manifest": self.memory.manifest.to_dict(),
             "audit": None, "our_eval_cp": our_eval, "crisis_triggered": crisis, "level": self.level,
         }
@@ -409,6 +410,39 @@ class ChessCoach:
             else:
                 deteval["action"] = "ok"
 
+        # ---- Deterministic evaluator, module 2: fork / double-attack threats ---
+        # Looks one ply deeper than module 1: does the chosen move let the opponent
+        # FORK us next move (win material a safe sibling would not concede)? Warn by
+        # default -- fork judgement has defensive nuance a 2-ply scan can miss, so a
+        # veto is opt-in ("threats.veto"). Runs on the post-module-1 chosen move.
+        threats = None
+        tcfg = cfg.raw.get("threats", {})
+        if tcfg.get("enabled", True) and viable:
+            from ..engine.threats import assess_candidates as assess_threats
+            threats = assess_threats(board, [v["uci"] for v in viable], chosen_uci,
+                                     tcfg.get("warn_threshold_cp", 150))
+            tmap = {c["uci"]: c["threat_cp"] for c in threats["per_candidate"]}
+            for v in viable:
+                if v["uci"] in tmap:
+                    v["threat_cp"] = tmap[v["uci"]]
+            if threats["has_threat"]:
+                if threats["avoidable"]:
+                    veto = tcfg.get("veto", False) and (
+                        mode in ("guided", "assist") or
+                        (mode == "autonomous" and tcfg.get("veto_in_autonomous", False)))
+                    if veto:
+                        chosen_uci = threats["safe_alt"]
+                        chosen_v = next(v for v in viable if v["uci"] == chosen_uci)
+                        chosen_move = chess.Move.from_uci(chosen_uci)
+                        threats["action"] = "re-picked"
+                        selection_by = f"{selection_by} → fork veto (module 2)"
+                    else:
+                        threats["action"] = "warned"
+                else:
+                    threats["action"] = "unavoidable"   # every candidate allows it
+            else:
+                threats["action"] = "ok"
+
         # blind-spot audit before committing
         audit = self.orch.audit_blind_spot(board, chosen_move, movetime=deep_mt)
 
@@ -445,6 +479,7 @@ class ChessCoach:
             "illegal_attempts": illegal_attempts,
             "sandbox": sandbox,
             "deteval": deteval,
+            "threats": threats,
             "concepts": concepts,
             "manifest": self.memory.manifest.to_dict(),
             "audit": audit,

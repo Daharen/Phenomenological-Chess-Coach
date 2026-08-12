@@ -61,6 +61,8 @@
 
   "deteval": {"enabled": true, "hang_threshold_cp": 100, "veto_in_autonomous": false},
 
+  "threats": {"enabled": true, "warn_threshold_cp": 150, "veto": false, "veto_in_autonomous": false},
+
   "server": {
     "host": "127.0.0.1",
     "port": 7801,
