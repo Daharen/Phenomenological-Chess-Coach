@@ -1,0 +1,13 @@
+Phenomenological Chess Coach - MVP
+
+Four-agent chess system playing on the machine as canon:
+- Orchestrator: strategic manifest + continuity + Blunder Protocol
+- One-off player: single-move proposer, illegal-move blacklist,
+  comprehension-horizon gate (5..15 plies by level)
+- Sandbox: decreasing beam-width / decreasing-depth (5->4->3->2->1) calculation
+- Evaluator: phenomenological coach keyed to a 200-term glossary
+Backends: local llama-server (default) / Gemini / deterministic Stockfish-only.
+Web UI + single .bat launcher. Program on C:, data+venv on F:.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011M1nJ8FN8MYsg3ztTPa9w5

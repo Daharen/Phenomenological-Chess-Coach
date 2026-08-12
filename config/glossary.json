@@ -1,0 +1,804 @@
+{
+ "terms": {
+  "Pin": {
+   "category": "tactic",
+   "definition": "A piece cannot or should not move because a more valuable piece (or the king) sits behind it on the same line. Absolute when the king is behind it."
+  },
+  "Skewer": {
+   "category": "tactic",
+   "definition": "The reverse of a pin: a valuable piece is attacked and forced to move, exposing a lesser piece behind it."
+  },
+  "Fork": {
+   "category": "tactic",
+   "definition": "One piece attacks two or more enemy targets at once; at least one usually cannot be saved."
+  },
+  "Double Attack": {
+   "category": "tactic",
+   "definition": "Two threats created in a single move, more than the opponent can meet."
+  },
+  "Discovered Attack": {
+   "category": "tactic",
+   "definition": "Moving one piece unveils an attack from a piece behind it."
+  },
+  "Discovered Check": {
+   "category": "tactic",
+   "definition": "A discovered attack where the unveiled line gives check, freeing the moved piece to do anything."
+  },
+  "Double Check": {
+   "category": "tactic",
+   "definition": "Two pieces give check at once; the king must move."
+  },
+  "X-Ray": {
+   "category": "tactic",
+   "definition": "A piece exerts influence through an enemy or friendly piece along a line."
+  },
+  "Deflection": {
+   "category": "tactic",
+   "definition": "Forcing a defending piece away from a key duty."
+  },
+  "Decoy": {
+   "category": "tactic",
+   "definition": "Luring a piece (often the king) onto a bad square."
+  },
+  "Attraction": {
+   "category": "tactic",
+   "definition": "Forcing an enemy piece onto a square where it can be hit by a follow-up."
+  },
+  "Clearance": {
+   "category": "tactic",
+   "definition": "Vacating a square or line so another piece can use it, often with tempo."
+  },
+  "Interference": {
+   "category": "tactic",
+   "definition": "Interposing a piece to cut the line between an enemy piece and what it defends."
+  },
+  "Removing the Defender": {
+   "category": "tactic",
+   "definition": "Capturing or chasing the piece that guards a key square or unit."
+  },
+  "Overloaded": {
+   "category": "tactic",
+   "definition": "A piece with too many defensive duties; loading it further breaks something."
+  },
+  "Zwischenzug": {
+   "category": "tactic",
+   "definition": "An in-between move (often a check or threat) inserted before the 'expected' recapture."
+  },
+  "Windmill": {
+   "category": "tactic",
+   "definition": "A repeating discovered-check mechanism that harvests material."
+  },
+  "Desperado": {
+   "category": "tactic",
+   "definition": "A doomed piece grabs whatever it can before it is lost."
+  },
+  "Battery": {
+   "category": "tactic",
+   "definition": "Two pieces lined up on the same file, rank, or diagonal to multiply pressure."
+  },
+  "Greek Gift": {
+   "category": "tactic",
+   "definition": "The Bxh7+ (or Bxh2+) bishop sacrifice to open the enemy king."
+  },
+  "Sacrifice": {
+   "category": "tactic",
+   "definition": "Giving up material for attack, initiative, structure, or mate."
+  },
+  "Exchange Sacrifice": {
+   "category": "tactic",
+   "definition": "Giving up a rook for a minor piece to gain positional or attacking value."
+  },
+  "Trapped Piece": {
+   "category": "tactic",
+   "definition": "A piece with no safe squares, about to be won."
+  },
+  "Loose Piece": {
+   "category": "tactic",
+   "definition": "An undefended piece — 'loose pieces drop off.'"
+  },
+  "Hanging Piece": {
+   "category": "tactic",
+   "definition": "A piece that can be captured for free or wins material for the attacker (SEE > 0)."
+  },
+  "Attack": {
+   "category": "tactic",
+   "definition": "A direct threat against a piece, square, or the king."
+  },
+  "Check": {
+   "category": "tactic",
+   "definition": "A direct attack on the king that must be answered immediately."
+  },
+  "Capture": {
+   "category": "tactic",
+   "definition": "Taking an enemy unit."
+  },
+  "Forcing": {
+   "category": "tactic",
+   "definition": "Checks, captures, and threats that sharply limit the opponent's replies."
+  },
+  "Put Pressure on the Pinned Piece": {
+   "category": "tactic",
+   "definition": "Piling attackers onto a pinned unit that cannot flee."
+  },
+  "Back-Rank Mate": {
+   "category": "mate",
+   "definition": "Mate on the back rank by a rook/queen against a king boxed in by its own pawns."
+  },
+  "Back-Rank Weakness": {
+   "category": "mate",
+   "definition": "The king's back rank lacks a luft escape, inviting back-rank tactics."
+  },
+  "Smothered Mate": {
+   "category": "mate",
+   "definition": "A knight mates a king hemmed in entirely by its own pieces."
+  },
+  "Arabian Mate": {
+   "category": "mate",
+   "definition": "Rook and knight coordinate to mate a cornered king."
+  },
+  "Anastasia’s Mate": {
+   "category": "mate",
+   "definition": "Knight and rook mate a king trapped on the edge."
+  },
+  "Boden’s Mate": {
+   "category": "mate",
+   "definition": "Two bishops on crossing diagonals mate a castled king."
+  },
+  "Epaulette Mate": {
+   "category": "mate",
+   "definition": "The king is mated flanked by its own pieces blocking escape."
+  },
+  "Hook Mate": {
+   "category": "mate",
+   "definition": "Rook, knight, pawn and enemy pawn combine to mate on the edge."
+  },
+  "Ladder Mate": {
+   "category": "mate",
+   "definition": "Two rooks (or queen+rook) drive the king up the board rank by rank."
+  },
+  "Dovetail Mate": {
+   "category": "mate",
+   "definition": "Queen mates a king whose two escape squares are blocked by its own units."
+  },
+  "Mating Net": {
+   "category": "mate",
+   "definition": "A web of threats from which the king cannot escape."
+  },
+  "Perpetual Check": {
+   "category": "mate",
+   "definition": "Endless checks forcing a draw."
+  },
+  "Smothered": {
+   "category": "mate",
+   "definition": "King's escape squares are all occupied by friendly pieces."
+  },
+  "Stalemate": {
+   "category": "endgame",
+   "definition": "No legal move while not in check — a draw."
+  },
+  "Zugzwang": {
+   "category": "endgame",
+   "definition": "Any move worsens the position; the obligation to move is the problem."
+  },
+  "Opposition": {
+   "category": "endgame",
+   "definition": "Kings face off with an odd number of squares between; the side NOT to move holds the opposition."
+  },
+  "Triangulation": {
+   "category": "endgame",
+   "definition": "Losing a tempo with the king to hand the opponent the move (zugzwang)."
+  },
+  "Underpromotion": {
+   "category": "endgame",
+   "definition": "Promoting to knight/rook/bishop for tactical or stalemate-avoidance reasons."
+  },
+  "Promotion": {
+   "category": "endgame",
+   "definition": "A pawn reaching the last rank becomes a piece."
+  },
+  "Passed Pawn": {
+   "category": "pawn",
+   "definition": "A pawn with no enemy pawns ahead on its file or adjacent files."
+  },
+  "Connected Passed Pawns": {
+   "category": "pawn",
+   "definition": "Two passed pawns on adjacent files supporting each other."
+  },
+  "Protected Passed Pawn": {
+   "category": "pawn",
+   "definition": "A passed pawn defended by another pawn."
+  },
+  "Isolated Pawn": {
+   "category": "pawn",
+   "definition": "A pawn with no friendly pawns on adjacent files."
+  },
+  "Doubled Pawns": {
+   "category": "pawn",
+   "definition": "Two friendly pawns on the same file."
+  },
+  "Tripled Pawns": {
+   "category": "pawn",
+   "definition": "Three friendly pawns on one file — a serious structural defect."
+  },
+  "Backward Pawn": {
+   "category": "pawn",
+   "definition": "A pawn behind its neighbours, unable to advance safely, often on a half-open file."
+  },
+  "Hanging Pawns": {
+   "category": "pawn",
+   "definition": "Two adjacent friendly pawns with no pawn support, strong but targetable."
+  },
+  "Pawn Majority": {
+   "category": "pawn",
+   "definition": "More pawns than the opponent on one wing."
+  },
+  "Pawn Minority": {
+   "category": "pawn",
+   "definition": "Fewer pawns on a wing, often used to launch a minority attack."
+  },
+  "Minority Attack": {
+   "category": "strategy",
+   "definition": "Advancing a pawn minority to create a weakness in the enemy majority (classic vs Carlsbad)."
+  },
+  "Pawn Break": {
+   "category": "strategy",
+   "definition": "A pawn advance that challenges the structure to open lines."
+  },
+  "Pawn Storm": {
+   "category": "strategy",
+   "definition": "Rolling pawns forward to open the enemy king."
+  },
+  "Pawn Island": {
+   "category": "pawn",
+   "definition": "A connected group of pawns; more islands means more weaknesses."
+  },
+  "Isolated Queen’s Pawn": {
+   "category": "pawn",
+   "definition": "An isolated d-pawn (IQP): dynamic activity vs long-term weakness."
+  },
+  "Carlsbad Structure": {
+   "category": "structure",
+   "definition": "The pawn structure from the Exchange QGD; theatre of the minority attack."
+  },
+  "Maroczy Bind": {
+   "category": "structure",
+   "definition": "Pawns on c4 and e4 clamping down on d5 and the black position."
+  },
+  "Stonewall": {
+   "category": "structure",
+   "definition": "A rigid pawn wall (d4/e3/f4 or ...d5/e6/f5) with a strong e5/e4 outpost."
+  },
+  "Pawn Chain": {
+   "category": "pawn",
+   "definition": "Diagonally linked pawns; attack the base."
+  },
+  "Pawn Cascade": {
+   "category": "pawn",
+   "definition": "A rolling sequence of pawn advances/exchanges."
+  },
+  "Outpost": {
+   "category": "positional",
+   "definition": "An advanced square, pawn-supported and safe from enemy pawns, ideal for a knight."
+  },
+  "Knight Outpost": {
+   "category": "positional",
+   "definition": "A knight installed on an outpost — often worth a rook's nuisance value."
+  },
+  "Weak Square": {
+   "category": "positional",
+   "definition": "A square that cannot be defended by a pawn."
+  },
+  "Strong Square": {
+   "category": "positional",
+   "definition": "A safe square from which a piece dominates."
+  },
+  "Hole": {
+   "category": "positional",
+   "definition": "A permanent weak square in front of the pawns."
+  },
+  "Space": {
+   "category": "positional",
+   "definition": "The territory controlled by advanced pawns; more space eases maneuvering."
+  },
+  "Center": {
+   "category": "positional",
+   "definition": "The d4/e4/d5/e5 zone; control confers mobility and initiative."
+  },
+  "Open File": {
+   "category": "positional",
+   "definition": "A file with no pawns; a highway for rooks."
+  },
+  "Semi-Open File": {
+   "category": "positional",
+   "definition": "A file with only enemy pawns; pressure target."
+  },
+  "Open Center": {
+   "category": "positional",
+   "definition": "Central pawns exchanged, favouring active pieces."
+  },
+  "Closed Center": {
+   "category": "positional",
+   "definition": "Locked central pawns, favouring maneuvering and flank play."
+  },
+  "Seventh Rank": {
+   "category": "positional",
+   "definition": "A rook on the enemy's second rank harasses pawns and king ('pigs on the seventh')."
+  },
+  "Long Diagonal": {
+   "category": "positional",
+   "definition": "The a1-h8 or a8-h1 diagonal, prime real estate for a fianchettoed bishop."
+  },
+  "Fianchetto": {
+   "category": "positional",
+   "definition": "Developing a bishop to g2/b2/g7/b7 behind a knight-pawn."
+  },
+  "Good Bishop": {
+   "category": "positional",
+   "definition": "A bishop whose pawns are mostly off its colour — free and active."
+  },
+  "Bad Bishop": {
+   "category": "positional",
+   "definition": "A bishop hemmed in by its own pawns on its colour."
+  },
+  "Two Bishops": {
+   "category": "positional",
+   "definition": "The bishop pair: a lasting edge in open positions."
+  },
+  "Rook Behind the Passed Pawn": {
+   "category": "endgame",
+   "definition": "Tarrasch's rule: rooks belong behind passed pawns."
+  },
+  "Rook Lift": {
+   "category": "strategy",
+   "definition": "Bringing a rook via the third rank into the attack."
+  },
+  "Rook Battery": {
+   "category": "tactic",
+   "definition": "Doubled rooks on a file."
+  },
+  "Alekhine’s Gun": {
+   "category": "tactic",
+   "definition": "Queen behind doubled rooks on a file — maximal pressure."
+  },
+  "Color Complex": {
+   "category": "positional",
+   "definition": "Systemic weakness of squares of one colour (e.g., dark-square holes)."
+  },
+  "Prophylaxis": {
+   "category": "strategy",
+   "definition": "Preventing the opponent's plan before pursuing your own."
+  },
+  "Restriction": {
+   "category": "strategy",
+   "definition": "Limiting the scope of enemy pieces."
+  },
+  "Blockade": {
+   "category": "strategy",
+   "definition": "Planting a piece in front of a passed pawn to stop it."
+  },
+  "Maneuver": {
+   "category": "strategy",
+   "definition": "Repositioning a piece to a better square over several moves."
+  },
+  "Repositioning": {
+   "category": "strategy",
+   "definition": "Rerouting a poorly placed piece."
+  },
+  "Coordination": {
+   "category": "strategy",
+   "definition": "Pieces working together toward one aim."
+  },
+  "Piece Activity": {
+   "category": "strategy",
+   "definition": "How much your pieces do; activity often trumps material."
+  },
+  "Piece Mobility": {
+   "category": "strategy",
+   "definition": "The number of good squares available to a piece."
+  },
+  "Centralization": {
+   "category": "strategy",
+   "definition": "Placing pieces (esp. king in the endgame) in the centre for maximum reach."
+  },
+  "Domination": {
+   "category": "strategy",
+   "definition": "Restricting an enemy piece so it has no good squares."
+  },
+  "Compensation": {
+   "category": "strategy",
+   "definition": "Non-material value (activity, structure, king safety) for sacrificed material."
+  },
+  "Counterplay": {
+   "category": "strategy",
+   "definition": "Active resources that offset the opponent's plans."
+  },
+  "Initiative": {
+   "category": "strategy",
+   "definition": "The ability to make threats and dictate play."
+  },
+  "Tempo": {
+   "category": "strategy",
+   "definition": "A unit of time; gaining a tempo means developing while making a threat."
+  },
+  "Development": {
+   "category": "strategy",
+   "definition": "Bringing pieces off the back rank into play."
+  },
+  "Breakthrough": {
+   "category": "strategy",
+   "definition": "Forcing open a closed position, often by pawn sac."
+  },
+  "Infiltration": {
+   "category": "strategy",
+   "definition": "Getting pieces into the enemy camp."
+  },
+  "Penetration": {
+   "category": "strategy",
+   "definition": "Invading via open lines to weak squares."
+  },
+  "Simplification": {
+   "category": "strategy",
+   "definition": "Trading pieces to reach a clearer or winning position."
+  },
+  "Liquidation": {
+   "category": "strategy",
+   "definition": "Exchanging into a known favourable endgame."
+  },
+  "Transition": {
+   "category": "strategy",
+   "definition": "Shifting between opening/middlegame/endgame phases."
+  },
+  "Transposition": {
+   "category": "theory",
+   "definition": "Reaching the same position by a different move order."
+  },
+  "Move Order": {
+   "category": "theory",
+   "definition": "The sequence of moves, which can dodge or invite specific lines."
+  },
+  "Conversion": {
+   "category": "strategy",
+   "definition": "Turning an advantage into a win."
+  },
+  "Keeping the Tension": {
+   "category": "strategy",
+   "definition": "Declining to resolve a pawn/central tension to keep the opponent guessing."
+  },
+  "Danger Levels": {
+   "category": "strategy",
+   "definition": "Assessing how sharp/risky a position is before committing."
+  },
+  "Overprotection": {
+   "category": "strategy",
+   "definition": "Guarding a key point more than necessary to free the guardians."
+  },
+  "Candidate Moves": {
+   "category": "calculation",
+   "definition": "The short list of moves worth calculating in a position."
+  },
+  "Calculation": {
+   "category": "calculation",
+   "definition": "Concrete forward analysis of forcing lines."
+  },
+  "Evaluation": {
+   "category": "calculation",
+   "definition": "Judging who stands better and why."
+  },
+  "Critical Position": {
+   "category": "calculation",
+   "definition": "A turning point demanding precise play."
+  },
+  "Quiet Move": {
+   "category": "calculation",
+   "definition": "A non-forcing move that quietly strengthens a threat."
+  },
+  "Waiting Move": {
+   "category": "calculation",
+   "definition": "A move that passes the obligation to act to the opponent."
+  },
+  "Horizon Effect": {
+   "category": "calculation",
+   "definition": "Pushing a problem beyond the search depth so it seems to vanish."
+  },
+  "Centipawn": {
+   "category": "calculation",
+   "definition": "1/100th of a pawn; the engine's unit of evaluation."
+  },
+  "Evaluation Swing": {
+   "category": "calculation",
+   "definition": "A sharp change in evaluation between moves or depths."
+  },
+  "Blunder": {
+   "category": "assessment",
+   "definition": "A serious error that changes the outcome (large centipawn loss)."
+  },
+  "Mistake": {
+   "category": "assessment",
+   "definition": "An error that meaningfully worsens the position."
+  },
+  "Inaccuracy": {
+   "category": "assessment",
+   "definition": "A slightly suboptimal move."
+  },
+  "Miss": {
+   "category": "assessment",
+   "definition": "Failing to play a clearly winning move or mate that was available."
+  },
+  "Dubious": {
+   "category": "assessment",
+   "definition": "A move of questionable soundness, playable but risky."
+  },
+  "Novelty": {
+   "category": "theory",
+   "definition": "A new move in a known theoretical position."
+  },
+  "Preparation": {
+   "category": "theory",
+   "definition": "Home analysis prepared before the game."
+  },
+  "Book Move": {
+   "category": "theory",
+   "definition": "A move within established opening theory."
+  },
+  "Theory": {
+   "category": "theory",
+   "definition": "The body of established opening/endgame knowledge."
+  },
+  "Repertoire": {
+   "category": "theory",
+   "definition": "A player's chosen set of openings."
+  },
+  "Main Line": {
+   "category": "theory",
+   "definition": "The most-analysed, principal continuation."
+  },
+  "Sideline": {
+   "category": "theory",
+   "definition": "A less-common alternative to the main line."
+  },
+  "Variation": {
+   "category": "theory",
+   "definition": "A specific sequence of moves."
+  },
+  "Refutation": {
+   "category": "theory",
+   "definition": "A concrete demonstration that a move or line fails."
+  },
+  "Poisoned Pawn": {
+   "category": "theory",
+   "definition": "A pawn that is dangerous to capture due to hidden compensation."
+  },
+  "En Prise": {
+   "category": "tactic",
+   "definition": "A piece left where it can be captured for free."
+  },
+  "En Passant": {
+   "category": "rules",
+   "definition": "Capturing a pawn that just advanced two squares as if it moved one."
+  },
+  "Touch-Move": {
+   "category": "rules",
+   "definition": "A touched piece must be moved if it has a legal move."
+  },
+  "Swindle": {
+   "category": "practical",
+   "definition": "Saving a lost position by setting a trap."
+  },
+  "Trap": {
+   "category": "practical",
+   "definition": "A tempting move that leads to trouble."
+  },
+  "Hope Chess": {
+   "category": "practical",
+   "definition": "Making threats without checking the opponent's replies."
+  },
+  "Natural Move": {
+   "category": "practical",
+   "definition": "A principled, intuitive move."
+  },
+  "Forced Move": {
+   "category": "calculation",
+   "definition": "The only reasonable/legal reply."
+  },
+  "Practical": {
+   "category": "practical",
+   "definition": "Choosing what is easiest to play for a human, not necessarily objectively best."
+  },
+  "Premature Attack": {
+   "category": "strategy",
+   "definition": "Attacking before the position justifies it."
+  },
+  "Counterattack": {
+   "category": "strategy",
+   "definition": "Meeting a threat with a bigger threat."
+  },
+  "Flank Attack": {
+   "category": "strategy",
+   "definition": "An attack on the wings, best met by a central break."
+  },
+  "Kingside Attack": {
+   "category": "strategy",
+   "definition": "An assault on the enemy king's wing."
+  },
+  "Queenside Expansion": {
+   "category": "strategy",
+   "definition": "Gaining space and play on the queenside."
+  },
+  "Castling": {
+   "category": "rules",
+   "definition": "King-and-rook move that tucks the king to safety."
+  },
+  "Opposite-Side Castling": {
+   "category": "strategy",
+   "definition": "Kings on opposite wings — a race of pawn storms."
+  },
+  "Strategy": {
+   "category": "meta",
+   "definition": "Long-term planning based on position features."
+  },
+  "Tactics": {
+   "category": "meta",
+   "definition": "Short-term forcing sequences to win material or mate."
+  },
+  "Positional": {
+   "category": "meta",
+   "definition": "Play based on structure and squares rather than force."
+  },
+  "Dynamic": {
+   "category": "meta",
+   "definition": "Play relying on activity, initiative, and time."
+  },
+  "Static": {
+   "category": "meta",
+   "definition": "Enduring features like structure and material."
+  },
+  "Sharp": {
+   "category": "meta",
+   "definition": "Concrete, double-edged, calculation-heavy."
+  },
+  "Solid": {
+   "category": "meta",
+   "definition": "Low-risk, structurally sound."
+  },
+  "Aggressive": {
+   "category": "meta",
+   "definition": "Threat-oriented, attacking."
+  },
+  "Defensive": {
+   "category": "meta",
+   "definition": "Focused on neutralising threats."
+  },
+  "Unbalanced": {
+   "category": "meta",
+   "definition": "Asymmetric material or structure creating winning chances for both."
+  },
+  "Gambit": {
+   "category": "opening",
+   "definition": "Sacrificing material (usually a pawn) in the opening for development or initiative."
+  },
+  "Trade": {
+   "category": "meta",
+   "definition": "Exchanging pieces of comparable value."
+  },
+  "Exchange": {
+   "category": "meta",
+   "definition": "A trade; also 'the exchange' = rook for minor piece."
+  },
+  "Material": {
+   "category": "meta",
+   "definition": "The total value of the pieces."
+  },
+  "Quality": {
+   "category": "meta",
+   "definition": "'The exchange' — the rook-vs-minor value gap."
+  },
+  "Fortress": {
+   "category": "endgame",
+   "definition": "A drawn setup the stronger side cannot break."
+  },
+  "Dead Draw": {
+   "category": "endgame",
+   "definition": "A position with no winning chances for either side."
+  },
+  "Repetition": {
+   "category": "rules",
+   "definition": "Threefold repetition of position draws."
+  },
+  "King Safety": {
+   "category": "positional",
+   "definition": "How exposed the king is to attack."
+  },
+  "Time Trouble": {
+   "category": "practical",
+   "definition": "Low clock time forcing fast, error-prone play."
+  },
+  "Clock Management": {
+   "category": "practical",
+   "definition": "Budgeting thinking time across the game."
+  },
+  "Opening": {
+   "category": "phase",
+   "definition": "The first phase: development, center, king safety."
+  },
+  "Middlegame": {
+   "category": "phase",
+   "definition": "The fighting phase of plans and tactics."
+  },
+  "Endgame": {
+   "category": "phase",
+   "definition": "Few pieces remain; king activity and pawns decide."
+  },
+  "Accuracy": {
+   "category": "assessment",
+   "definition": "How closely moves match the engine's best."
+  },
+  "Depth": {
+   "category": "calculation",
+   "definition": "How many plies ahead analysis reaches."
+  },
+  "Machine": {
+   "category": "meta",
+   "definition": "Engine-style play: concrete, inhuman precision."
+  },
+  "Human": {
+   "category": "meta",
+   "definition": "Pattern- and principle-based play under practical constraints."
+  },
+  "Open": {
+   "category": "meta",
+   "definition": "Positions with open lines and piece play."
+  },
+  "Closed": {
+   "category": "meta",
+   "definition": "Locked positions favouring maneuvering."
+  },
+  "Diagonals": {
+   "category": "positional",
+   "definition": "Bishop highways; long diagonals are prime."
+  },
+  "Files": {
+   "category": "positional",
+   "definition": "Vertical lines; rooks thrive on open ones."
+  },
+  "Rank": {
+   "category": "positional",
+   "definition": "Horizontal lines; the 7th/2nd are attacking lanes."
+  },
+  "Diagonal": {
+   "category": "positional",
+   "definition": "A bishop's line of action."
+  },
+  "Winning": {
+   "category": "assessment",
+   "definition": "A decisive advantage with correct play."
+  },
+  "Losing": {
+   "category": "assessment",
+   "definition": "A decisive disadvantage with correct play by the opponent."
+  },
+  "Equal": {
+   "category": "assessment",
+   "definition": "Balanced chances."
+  },
+  "Lucena Position": {
+   "category": "endgame",
+   "definition": "A winning rook-endgame technique ('building a bridge')."
+  },
+  "Philidor Position": {
+   "category": "endgame",
+   "definition": "A drawing rook-endgame defensive technique."
+  },
+  "Corresponding Squares": {
+   "category": "endgame",
+   "definition": "Square-pairing logic in king-and-pawn endgames."
+  },
+  "Tablebase": {
+   "category": "endgame",
+   "definition": "Perfect precomputed results for positions with few pieces."
+  },
+  "Rule of the Square": {
+   "category": "endgame",
+   "definition": "Can the king catch the passed pawn? Check the pawn's square."
+  }
+ }
+}

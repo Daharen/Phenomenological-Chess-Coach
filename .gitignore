@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Local secrets / machine-specific overrides
+config/local.json
+*.key
+
+# OS
+.DS_Store
+Thumbs.db
+
+# The F: data directory lives outside this tree; never commit game data
+runs/
+logs/
+cache/
+games/

@@ -1,0 +1,63 @@
+{
+  "data_dir": "F:\\My_Programs\\Phenomonological_Chess_Coach_Data",
+
+  "stockfish_path": "C:\\Users\\just_\\Opening-Trainer\\tools\\stockfish\\stockfish-windows-x86-64-avx2.exe",
+  "stockfish_fallbacks": [
+    "F:\\OpeningTrainerContent\\stockfish\\stockfish-windows-x86-64-avx2.exe",
+    "F:\\Opening Trainer Large Data File\\Work Surface\\opening_trainer_content_seed_rapid600_v1\\stockfish\\stockfish-windows-x86-64-avx2.exe"
+  ],
+  "stockfish_threads": 2,
+  "stockfish_hash_mb": 256,
+
+  "llm": {
+    "provider": "local",
+    "enabled": true,
+    "timeout_seconds": 60,
+    "max_retries": 2,
+    "local": {
+      "endpoint": "http://127.0.0.1:8080/v1/chat/completions",
+      "model": "local-9b",
+      "api_key": "sk-no-key-required",
+      "timeout_seconds": 240,
+      "keepalive_seconds": 150
+    },
+    "gemini": {
+      "model": "gemini-2.5-pro",
+      "model_fallbacks": ["gemini-2.5-flash", "gemini-1.5-pro"],
+      "api_key_env": "GEMINI_CHESS_API",
+      "endpoint": "https://generativelanguage.googleapis.com/v1beta"
+    }
+  },
+
+  "levels": {
+    "club":   {"horizon": 5,  "deep_movetime": 1.0},
+    "expert": {"horizon": 8,  "deep_movetime": 1.5},
+    "master": {"horizon": 11, "deep_movetime": 2.5},
+    "gm":     {"horizon": 15, "deep_movetime": 4.0}
+  },
+  "default_level": "expert",
+
+  "classification": {
+    "inaccuracy_cp": 50,
+    "mistake_cp": 120,
+    "blunder_cp": 250,
+    "win_threshold_cp": 350,
+    "miss_drop_cp": 200,
+    "class_depth": 12
+  },
+
+  "sandbox": {
+    "max_horizon": 5,
+    "beam_schedule": [3, 2, 1, 1, 1],
+    "collapse_cp": -300,
+    "candidate_k": 3,
+    "max_player_attempts": 6,
+    "max_illegal_retries": 8
+  },
+
+  "server": {
+    "host": "127.0.0.1",
+    "port": 7801,
+    "open_browser": true
+  }
+}

@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Phenomenological Chess Coach</title>
+<style>
+  :root{
+    --bg:#0f1418; --panel:#171e24; --panel2:#1e262d; --line:#2a343c;
+    --ink:#e6edf3; --dim:#8b98a5; --accent:#4c9be8; --good:#3fb950;
+    --warn:#d29922; --bad:#f85149; --light:#b9c4cf; --sq-l:#b7c0c8; --sq-d:#5d7386;
+    --hi:#f2c14e;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  header{display:flex;align-items:center;gap:14px;padding:10px 16px;
+    background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+  header h1{font-size:16px;margin:0;font-weight:600;letter-spacing:.2px}
+  header .tag{color:var(--dim);font-size:12px}
+  .wrap{display:grid;grid-template-columns:auto 1fr;gap:16px;padding:16px;align-items:start}
+  @media(max-width:1050px){.wrap{grid-template-columns:1fr}}
+  select,button,input{background:var(--panel2);color:var(--ink);border:1px solid var(--line);
+    border-radius:6px;padding:6px 10px;font-size:13px;cursor:pointer}
+  button:hover{border-color:var(--accent)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#03121f;font-weight:600}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .left{display:flex;flex-direction:column;gap:10px;align-items:center}
+  .boardwrap{display:flex;gap:8px}
+  .evalbar{width:16px;height:480px;background:#111;border:1px solid var(--line);
+    border-radius:4px;position:relative;overflow:hidden}
+  .evalfill{position:absolute;left:0;right:0;bottom:0;background:var(--light);transition:height .4s}
+  #board{width:480px;height:480px;display:grid;grid-template-columns:repeat(8,1fr);
+    grid-template-rows:repeat(8,1fr);border:2px solid #0a0d10;border-radius:4px;user-select:none}
+  .sq{display:flex;align-items:center;justify-content:center;font-size:40px;position:relative;cursor:pointer}
+  .sq.l{background:var(--sq-l)} .sq.d{background:var(--sq-d)}
+  .sq .pc{line-height:1;filter:drop-shadow(0 1px 1px rgba(0,0,0,.4))}
+  .pc.w{color:#fff} .pc.b{color:#1b1b1b}
+  .sq.sel{outline:3px solid var(--hi);outline-offset:-3px}
+  .sq .dot{position:absolute;width:26%;height:26%;border-radius:50%;background:rgba(0,0,0,.35)}
+  .sq.cap .dot{width:88%;height:88%;background:transparent;border:4px solid rgba(0,0,0,.35);border-radius:50%}
+  .sq.lastmv{box-shadow:inset 0 0 0 4px rgba(242,193,78,.55)}
+  .sq .co{position:absolute;font-size:10px;color:rgba(0,0,0,.5)}
+  .sq .co.f{right:2px;bottom:1px}.sq .co.r{left:2px;top:1px}
+  .controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-width:520px}
+  .panels{display:flex;flex-direction:column;gap:14px;min-width:0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .card h2{margin:0 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--dim)}
+  .kv{display:flex;gap:6px;flex-wrap:wrap;margin:2px 0}
+  .kv b{color:var(--dim);font-weight:600;min-width:96px}
+  .pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;border:1px solid var(--line)}
+  .pill.good{color:var(--good);border-color:#1c3a24}.pill.best{color:var(--good);border-color:#1c3a24}
+  .pill.inaccuracy{color:var(--warn)}.pill.mistake{color:#e3873c}
+  .pill.blunder,.pill.loss,.pill.miss{color:var(--bad);border-color:#5a1e1c}
+  .pill.crisis{color:#03121f;background:var(--bad);border-color:var(--bad)}
+  .cand{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:6px 0;background:var(--panel2)}
+  .cand.chosen{border-color:var(--good);box-shadow:0 0 0 1px var(--good) inset}
+  .cand.rej{border-color:#5a1e1c}
+  .mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;color:var(--light)}
+  .traj{color:var(--dim);font-size:12px;margin-top:3px}
+  .concepts{display:flex;flex-wrap:wrap;gap:6px}
+  .concept{border:1px solid var(--line);border-radius:6px;padding:2px 8px;font-size:12px;cursor:help;background:var(--panel2)}
+  .concept .side{color:var(--dim);font-size:10px;margin-left:4px}
+  .coach{white-space:pre-wrap;line-height:1.55}
+  .hist{font-family:ui-monospace,monospace;font-size:12px;color:var(--light);max-height:140px;overflow:auto}
+  .muted{color:var(--dim)} .rt{color:var(--good)} .warn{color:var(--warn)}
+  #tip{position:fixed;pointer-events:none;background:#000d;border:1px solid var(--line);
+    padding:8px 10px;border-radius:6px;max-width:280px;font-size:12px;z-index:50;display:none}
+  .flash{color:var(--dim);font-size:12px;min-height:16px}
+  .spin{display:inline-block;width:12px;height:12px;border:2px solid var(--dim);
+    border-top-color:var(--accent);border-radius:50%;animation:s .7s linear infinite;vertical-align:-2px}
+  @keyframes s{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<header>
+  <h1>♟ Phenomenological Chess Coach</h1>
+  <span class="tag" id="hp">connecting…</span>
+  <span style="flex:1"></span>
+  <label class="tag">You play
+    <select id="color"><option value="white">White</option><option value="black">Black</option></select>
+  </label>
+  <label class="tag">Level
+    <select id="level">
+      <option value="club">Club (h5)</option>
+      <option value="expert" selected>Expert (h8)</option>
+      <option value="master">Master (h11)</option>
+      <option value="gm">GM (h15)</option>
+    </select>
+  </label>
+  <label class="tag">Engine brain
+    <select id="provider">
+      <option value="local">Local 9B</option>
+      <option value="gemini">Gemini</option>
+      <option value="null">Stockfish-only</option>
+    </select>
+  </label>
+  <button id="new" class="primary">New game</button>
+</header>
+
+<div class="wrap">
+  <div class="left">
+    <div class="boardwrap">
+      <div class="evalbar" title="evaluation (White up = taller)"><div class="evalfill" id="evalfill" style="height:50%"></div></div>
+      <div id="board"></div>
+    </div>
+    <div class="flash" id="flash"></div>
+    <div class="controls">
+      <button id="engine">Engine move ▶</button>
+      <button id="analyze">Analyze position</button>
+      <button id="flip">Flip</button>
+      <button id="undo" title="take back last full move">Undo</button>
+    </div>
+  </div>
+
+  <div class="panels">
+    <div class="card">
+      <h2>Strategic Manifest <span id="mode" class="pill"></span></h2>
+      <div class="kv"><b>Opening</b><span id="m_open" class="muted">—</span></div>
+      <div class="kv"><b>Theme</b><span id="m_theme">—</span></div>
+      <div class="kv"><b>Goals</b><span id="m_goals" class="muted">—</span></div>
+      <div class="kv"><b>Targets</b><span id="m_targets" class="muted">—</span></div>
+      <div class="kv"><b>King safety</b><span id="m_king" class="muted">—</span></div>
+      <div class="kv"><b>Opponent</b><span id="m_opp" class="muted">—</span></div>
+    </div>
+
+    <div class="card">
+      <h2>Engine turn — candidates & sandbox</h2>
+      <div id="turnbox" class="muted">Make a move, then press “Engine move”.</div>
+    </div>
+
+    <div class="card">
+      <h2>Phenomenological coaching <span id="coachsrc" class="tag"></span></h2>
+      <div id="coach" class="coach muted">—</div>
+    </div>
+
+    <div class="card">
+      <h2>Motifs in the position <span class="tag">(hover for glossary)</span></h2>
+      <div id="concepts" class="concepts"><span class="muted">—</span></div>
+    </div>
+
+    <div class="card">
+      <h2>Move history</h2>
+      <div id="hist" class="hist muted">—</div>
+    </div>
+  </div>
+</div>
+<div id="tip"></div>
+
+<script>
+const PIECES={K:'♔',Q:'♕',R:'♖',B:'♗',N:'♘',P:'♙',k:'♚',q:'♛',r:'♜',b:'♝',n:'♞',p:'♟'};
+let ST=null, SEL=null, FLIP=false, GLOSS={}, BUSY=false, LASTMV=null;
+
+const $=s=>document.querySelector(s);
+const api=async(u,m,b)=>{const r=await fetch(u,{method:m||'GET',headers:{'Content-Type':'application/json'},
+  body:b?JSON.stringify(b):undefined});return r.json();};
+function flash(t,cls){const f=$('#flash');f.className='flash '+(cls||'');f.innerHTML=t||'';}
+
+function fenToGrid(fen){
+  const rows=fen.split(' ')[0].split('/');const g=[];
+  for(const row of rows){const r=[];for(const ch of row){
+    if(/\d/.test(ch))for(let i=0;i<+ch;i++)r.push('');else r.push(ch);}g.push(r);}
+  return g; // g[0]=rank8
+}
+function sqName(file,rank){return 'abcdefgh'[file]+(rank+1);}
+
+function drawBoard(){
+  const board=$('#board');board.innerHTML='';
+  if(!ST)return;
+  const g=fenToGrid(ST.fen);
+  const ranks=[...Array(8).keys()];const files=[...Array(8).keys()];
+  const rOrder=FLIP?ranks:ranks.slice().reverse();     // top->bottom
+  const fOrder=FLIP?files.slice().reverse():files;
+  for(const r of rOrder){
+    for(const f of fOrder){
+      const name=sqName(f,r);
+      const piece=g[7-r][f];
+      const d=document.createElement('div');
+      d.className='sq '+(((f+r)%2===0)?'d':'l');
+      d.dataset.sq=name;
+      if(piece){const w=document.createElement('span');
+        w.className='pc '+(piece===piece.toUpperCase()?'w':'b');
+        w.textContent=PIECES[piece];d.appendChild(w);}
+      if(LASTMV&&(name===LASTMV.slice(0,2)||name===LASTMV.slice(2,4)))d.classList.add('lastmv');
+      // coordinates
+      if(f===(FLIP?7:0)){const c=document.createElement('span');c.className='co r';c.textContent=r+1;d.appendChild(c);}
+      if(r===(FLIP?7:0)){const c=document.createElement('span');c.className='co f';c.textContent='abcdefgh'[f];d.appendChild(c);}
+      d.onclick=()=>onSquare(name);
+      board.appendChild(d);
+    }
+  }
+}
+async function onSquare(name){
+  if(BUSY||!ST||ST.is_game_over)return;
+  if(ST.turn!==humanColor()){flash('Not your turn.','warn');return;}
+  const g=fenToGrid(ST.fen);
+  if(SEL){
+    if(name===SEL){SEL=null;drawBoard();return;}
+    // attempt move SEL->name
+    let uci=SEL+name;
+    const promo=isPromotion(SEL,name);
+    if(promo){uci+= (await pickPromo())||'q';}
+    if(ST.legal_moves.includes(uci)){
+      SEL=null; await doHuman(uci);
+    }else{ // maybe reselect own piece
+      if(ownPieceAt(name)){SEL=name;highlight(name);}else{SEL=null;drawBoard();flash('Illegal move.','warn');}
+    }
+  }else{
+    if(ownPieceAt(name)){SEL=name;highlight(name);}
+  }
+}
+function humanColor(){return ST.engine_color==='white'?'black':'white';}
+function ownPieceAt(name){
+  const g=fenToGrid(ST.fen);const f='abcdefgh'.indexOf(name[0]);const r=+name[1]-1;
+  const p=g[7-r][f];if(!p)return false;
+  const white=p===p.toUpperCase();
+  return (white&&humanColor()==='white')||(!white&&humanColor()==='black');
+}
+function isPromotion(from,to){
+  const g=fenToGrid(ST.fen);const f='abcdefgh'.indexOf(from[0]);const r=+from[1]-1;
+  const p=g[7-r][f];if(!p||p.toUpperCase()!=='P')return false;
+  return to[1]==='8'||to[1]==='1';
+}
+function pickPromo(){return new Promise(res=>{
+  const box=document.createElement('div');box.id='tip';box.style.display='block';
+  box.style.left='50%';box.style.top='50%';box.style.transform='translate(-50%,-50%)';
+  box.style.pointerEvents='auto';box.innerHTML='Promote to: ';
+  ['q','r','b','n'].forEach(x=>{const b=document.createElement('button');b.textContent=x.toUpperCase();
+    b.style.margin='0 3px';b.onclick=()=>{document.body.removeChild(box);res(x);};box.appendChild(b);});
+  document.body.appendChild(box);});}
+async function highlight(name){
+  drawBoard();
+  const el=[...document.querySelectorAll('.sq')].find(s=>s.dataset.sq===name);
+  if(el)el.classList.add('sel');
+  const r=await api('/api/legal?square='+name);
+  for(const t of (r.targets||[])){const to=t.slice(2,4);
+    const s=[...document.querySelectorAll('.sq')].find(x=>x.dataset.sq===to);
+    if(s){const dot=document.createElement('span');dot.className='dot';
+      const g=fenToGrid(ST.fen);const f='abcdefgh'.indexOf(to[0]);const rr=+to[1]-1;
+      if(g[7-rr][f])s.classList.add('cap');s.appendChild(dot);}}
+}
+async function doHuman(uci){
+  BUSY=true;flash('');
+  const r=await api('/api/human_move','POST',{uci});
+  if(!r.ok){flash(r.error||'illegal','warn');BUSY=false;return;}
+  ST=r.state;LASTMV=uci;drawBoard();renderState();
+  const cl=r.classification;
+  flash(`Your ${cl.played_san}: <span class="pill ${cl.label}">${cl.label}</span> (${cl.delta_cp}cp lost)`);
+  BUSY=false;
+  if(!ST.is_game_over&&ST.turn===ST.engine_color){setTimeout(engineMove,350);}
+}
+async function engineMove(){
+  if(BUSY||!ST||ST.is_game_over)return;
+  BUSY=true;flash('Engine is thinking <span class="spin"></span>');
+  const r=await api('/api/engine_move','POST',{});
+  if(!r.ok){flash(r.error||'error','warn');BUSY=false;return;}
+  ST=r.state;LASTMV=r.turn.chosen.uci;drawBoard();renderState();renderTurn(r.turn);
+  flash(`Engine played <b>${r.turn.chosen.san}</b>`);
+  BUSY=false;
+}
+async function analyze(){
+  BUSY=true;flash('Analyzing <span class="spin"></span>');
+  const r=await api('/api/analyze','POST',{});BUSY=false;flash('');
+  if(!r.ok)return;
+  renderConcepts(r.concepts);
+  const tb=$('#turnbox');
+  tb.innerHTML='<b>Single-state read</b> (eval '+fmtCp(r.eval_cp_white)+' for White)<br>'+
+    r.top_moves.map(m=>`<span class="mono">${m.san}</span> <span class="muted">${m.mate!==null?('#'+m.mate):(m.cp+'cp')}</span>`).join(' &nbsp; ');
+}
+function fmtCp(cp){if(cp>90000)return '#+';if(cp<-90000)return '#-';return (cp>=0?'+':'')+(cp/100).toFixed(2);}
+function renderState(){
+  if(!ST)return;
+  const m=ST.manifest||{};
+  $('#m_open').textContent=m.opening||'—';
+  $('#m_theme').textContent=m.theme||'—';
+  $('#m_goals').textContent=(m.long_term_goals||[]).join(' · ')||'—';
+  $('#m_targets').textContent=(m.targets||[]).join(' · ')||'to be identified';
+  $('#m_king').textContent=m.king_safety||'—';
+  $('#m_opp').textContent=m.opponent_intent||'—';
+  const mode=$('#mode');mode.textContent=m.mode||'';mode.className='pill '+(m.mode==='crisis'?'crisis':'');
+  $('#hist').textContent=histStr(ST.history_san);
+  $('#hist').classList.toggle('muted',!(ST.history_san&&ST.history_san.length));
+  if(ST.provider)$('#hp').textContent=ST.provider+' · sf ok';
+  // eval bar updated on analyze/engine; keep as-is otherwise
+}
+function histStr(h){if(!h||!h.length)return '—';let s='';for(let i=0;i<h.length;i+=2){
+  s+=(i/2+1)+'. '+h[i]+' '+(h[i+1]||'')+'  ';}return s;}
+function renderTurn(t){
+  const cl=t.chosen.classification;
+  setEval(t.our_eval_cp, ST.engine_color);
+  let html='';
+  if(t.crisis_triggered)html+='<div class="pill crisis" style="margin-bottom:6px">⚠ Blunder Protocol — switched to crisis management</div>';
+  html+=`<div class="cand chosen"><b>Chosen ▶ ${t.chosen.san}</b> <span class="pill ${cl.label}">${cl.label}</span>
+    <span class="muted">${cl.played_cp}cp${t.chosen.beyond_horizon?' · beyond-horizon (allowed)':''}</span>
+    <div class="traj">${escape(t.chosen.rationale||'')}</div></div>`;
+  // sandbox lines
+  const lines=(t.sandbox&&t.sandbox.lines)||[];
+  for(const ln of lines){
+    const chosen=ln.seed_uci===t.chosen.uci;
+    const traj=ln.steps.map(s=>`<span class="mono">${s.san}</span><span class="muted">(${s.eval_cp},d${s.depth_used})</span>`).join(' ');
+    html+=`<div class="cand ${chosen?'chosen':''}"><b>${ln.seed_san}</b> ${ln.collapsed?'<span class="pill blunder">collapse@'+ln.collapse_ply+'</span>':''}
+      <div class="traj">${traj||'<span class="muted">—</span>'}</div></div>`;
+  }
+  // rejected
+  for(const r of (t.rejected||[])){
+    const rc=r.classification;
+    const cons=(r.consequence&&r.consequence.trajectory||[]).map(s=>s.san).join(' ');
+    html+=`<div class="cand rej"><b>Rejected ✕ ${r.san}</b> <span class="pill ${rc.label}">${rc.label}</span>
+      <div class="traj">${escape(r.reason)}${cons?(' — <span class="mono">'+cons+'</span>'):''}</div></div>`;
+  }
+  if(t.illegal_attempts&&t.illegal_attempts.length)
+    html+=`<div class="traj warn">Illegal proposals kicked back: <span class="mono">${t.illegal_attempts.join(', ')}</span></div>`;
+  if(t.audit)html+=`<div class="traj warn">Blind-spot audit: ${escape(t.audit.note)}</div>`;
+  $('#turnbox').innerHTML=html;
+  // coaching
+  $('#coach').textContent=(t.coaching&&t.coaching.text)||'—';
+  $('#coach').classList.remove('muted');
+  $('#coachsrc').textContent=t.coaching?('· '+t.coaching.source):'';
+  renderConcepts(t.concepts);
+}
+function setEval(cp_pov, engineColor){
+  // convert to white pov
+  let white = engineColor==='white'? cp_pov : -cp_pov;
+  let pct = 50 + 50*Math.tanh(white/600);
+  pct=Math.max(2,Math.min(98,pct));
+  $('#evalfill').style.height=pct+'%';
+}
+function renderConcepts(tags){
+  const box=$('#concepts');
+  if(!tags||!tags.length){box.innerHTML='<span class="muted">none flagged</span>';return;}
+  box.innerHTML='';
+  const seen=new Set();
+  for(const t of tags){
+    const key=t.term+t.side;if(seen.has(key))continue;seen.add(key);
+    const el=document.createElement('span');el.className='concept';
+    el.innerHTML=t.term+'<span class="side">'+t.side+'</span>';
+    el.onmousemove=e=>showTip(e,t);el.onmouseleave=hideTip;
+    box.appendChild(el);
+  }
+}
+function showTip(e,t){const tip=$('#tip');const g=GLOSS[t.term];
+  tip.innerHTML='<b>'+t.term+'</b> <span class="muted">'+(g?g.category:'')+'</span><br>'+
+    (g?g.definition:'')+'<br><span class="muted">'+(t.detail||'')+'</span>';
+  tip.style.display='block';tip.style.left=Math.min(e.clientX+14,innerWidth-300)+'px';
+  tip.style.top=(e.clientY+14)+'px';}
+function hideTip(){$('#tip').style.display='none';}
+function escape(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+
+async function newGame(){
+  const color=$('#color').value, level=$('#level').value;
+  flash('Starting <span class="spin"></span>');
+  ST=await api('/api/new','POST',{human_color:color,level});
+  FLIP=(color==='black');LASTMV=null;SEL=null;
+  drawBoard();renderState();
+  $('#turnbox').innerHTML='<span class="muted">Make a move, then press “Engine move”.</span>';
+  $('#coach').textContent='—';$('#coach').classList.add('muted');
+  $('#coachsrc').textContent='';renderConcepts([]);
+  flash('New game — you are '+color+'.');
+  if(ST.turn===ST.engine_color){setTimeout(engineMove,400);}
+}
+async function setProvider(){
+  const p=$('#provider').value;const r=await api('/api/provider','POST',{provider:p});
+  if(r.ok){flash('Engine brain: '+r.provider);if(ST){ST.provider=r.provider;renderState();}}
+}
+async function undo(){
+  flash('Undo not wired to server history in this build — start a new game to reset.','warn');
+}
+
+(async function init(){
+  GLOSS=await api('/api/glossary');
+  const h=await api('/api/health');
+  $('#hp').textContent=h.provider+' · '+(h.stockfish?'sf ok':'no sf')+' · '+h.glossary_terms+' terms';
+  $('#new').onclick=newGame;
+  $('#engine').onclick=engineMove;
+  $('#analyze').onclick=analyze;
+  $('#flip').onclick=()=>{FLIP=!FLIP;drawBoard();};
+  $('#undo').onclick=undo;
+  $('#provider').onchange=setProvider;
+  await newGame();
+})();
+</script>
+</body>
+</html>
