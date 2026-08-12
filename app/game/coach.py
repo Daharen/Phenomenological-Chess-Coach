@@ -38,6 +38,19 @@ from ..agents.player import OneOffPlayer
 from ..agents.evaluator import Evaluator
 from .memory import Memory
 
+# Material values for the deterministic (non-Stockfish) leaf evaluation used by
+# the LLM-calculated sandbox. King excluded (never captured).
+PIECE_VAL = {chess.PAWN: 100, chess.KNIGHT: 320, chess.BISHOP: 330,
+             chess.ROOK: 500, chess.QUEEN: 900}
+
+
+def material_cp(board: chess.Board, pov: chess.Color) -> int:
+    """Net material (centipawns) from `pov`'s perspective. Deterministic."""
+    s = 0
+    for pt, v in PIECE_VAL.items():
+        s += v * len(board.pieces(pt, pov)) - v * len(board.pieces(pt, not pov))
+    return s
+
 
 class ChessCoach:
     def __init__(self, cfg: Config):
@@ -91,8 +104,91 @@ class ChessCoach:
         return {"ok": True, "classification": cls.to_dict(),
                 "concepts": concepts, "state": self.state()}
 
+    # -- LLM-calculated sandbox (optional variant) -----------------------------
+    def _llm_move_at(self, board: chess.Board, note: str, budget: list[int]):
+        """One legal move from the LLM for the side to move, with trial-based
+        illegal retry. `budget` is a 1-element list (remaining calls) mutated in
+        place. Returns (Proposal|None, [illegal raw...])."""
+        cap = self.cfg.sandbox.get("max_establish_attempts", 64)
+        no_prog_cap = self.cfg.sandbox.get("no_progress_cap", 8)
+        tried: list[str] = []
+        seen: set[str] = set()
+        attempts = 0
+        stagnant = 0
+        while attempts < cap and budget[0] > 0:
+            attempts += 1
+            budget[0] -= 1
+            prop = self.player.propose_one(board, note, tried, None)
+            if prop.move is not None and prop.move in board.legal_moves:
+                return prop, tried
+            raw = (prop.raw or "").strip() or "?"
+            if raw not in seen:
+                seen.add(raw)
+                tried.append(raw)
+                stagnant = 0
+            else:
+                stagnant += 1
+                if stagnant >= no_prog_cap:
+                    break
+        return None, tried
+
+    def _llm_sandbox(self, board: chess.Board, root_ucis: list[str], note: str) -> dict:
+        """For each root candidate, the LLM plays a line `our_moves` of OUR moves
+        deep (interleaving the opponent's best-estimate replies), every move legal.
+        The leaf is scored by deterministic net material. Roots are ranked by leaf."""
+        our_moves = self.cfg.sandbox.get("our_moves", 5)
+        collapse_cp = self.cfg.sandbox.get("collapse_cp", -300)
+        budget = [self.cfg.sandbox.get("llm_calc_budget", 60)]
+        root_mover = board.turn
+        lines = []
+        for root in root_ucis:
+            b = board.copy()
+            mv0 = chess.Move.from_uci(root)
+            steps = []
+            illegal_here: list[str] = []
+            san0 = b.san(mv0)
+            b.push(mv0)
+            steps.append({"ply": 1, "san": san0, "uci": root, "mover": True,
+                          "depth_used": 0, "eval_cp": material_cp(b, root_mover),
+                          "fen": b.fen()})
+            collapsed = False
+            collapse_ply = None
+            our_count = 1
+            ply = 1
+            while our_count < our_moves and not b.is_game_over() and budget[0] > 0:
+                ply += 1
+                is_our = (b.turn == root_mover)
+                prop, tried = self._llm_move_at(b, note if is_our else "", budget)
+                illegal_here += tried
+                if prop is None:
+                    break
+                san = b.san(prop.move)
+                b.push(prop.move)
+                cp = material_cp(b, root_mover)
+                steps.append({"ply": ply, "san": san, "uci": prop.move.uci(),
+                              "mover": is_our, "depth_used": 0, "eval_cp": cp,
+                              "fen": b.fen()})
+                if not collapsed and cp <= collapse_cp:
+                    collapsed, collapse_ply = True, ply
+                if is_our:
+                    our_count += 1
+            leaf = material_cp(b, root_mover)
+            lines.append({
+                "seed_uci": root, "seed_san": san0, "steps": steps,
+                "collapsed": collapsed, "collapse_ply": collapse_ply,
+                "collapse_reason": (f"material fell to {leaf}cp" if collapsed else None),
+                "final_cp": leaf, "score": float(leaf), "illegal": illegal_here,
+            })
+        lines.sort(key=lambda ln: ln["score"], reverse=True)
+        return {
+            "engine": "llm", "our_moves": our_moves,
+            "lines": lines, "best_uci": (lines[0]["seed_uci"] if lines else None),
+            "ranking": [(ln["seed_san"], round(ln["score"], 1), ln["collapsed"]) for ln in lines],
+            "calls_used": self.cfg.sandbox.get("llm_calc_budget", 60) - budget[0],
+        }
+
     # -- the engine's phenomenological turn ------------------------------------
-    def engine_move(self, mode: str | None = None) -> dict:
+    def engine_move(self, mode: str | None = None, sandbox_engine: str | None = None) -> dict:
         if self.board.is_game_over():
             return {"ok": False, "error": "game over", "state": self.state()}
         board = self.board
@@ -120,21 +216,32 @@ class ChessCoach:
         illegal_attempts: list[str] = []          # raw strings tried and found illegal
         seen_illegal: set[str] = set()
         attempts = 0
+        no_prog_cap = cfg.sandbox.get("no_progress_cap", 8)
         if llm:
+            stagnant = 0                          # consecutive attempts that added nothing new
             while len(established) < target and attempts < max_attempts:
                 attempts += 1
                 chosen_ucis = [e["uci"] for e in established]
                 prop = self.player.propose_one(board, note, illegal_attempts, chosen_ucis)
                 if prop.move is None or prop.move not in board.legal_moves:
                     raw = (prop.raw or "").strip() or "?"
-                    if raw not in seen_illegal:
+                    if raw not in seen_illegal:   # a NEW illegal move -> progress
                         seen_illegal.add(raw)
                         illegal_attempts.append(raw)
+                        stagnant = 0
+                    else:
+                        stagnant += 1             # repeating the same reject -> no progress
+                    if stagnant >= no_prog_cap:
+                        break
                     continue
                 uci = prop.move.uci()
                 if uci in {e["uci"] for e in established}:
-                    continue                      # already have it; ask for a different one
+                    stagnant += 1                 # already have it; keep asking, but bounded
+                    if stagnant >= no_prog_cap:
+                        break
+                    continue
                 established.append({"uci": uci, "san": prop.san, "proposal": prop.to_dict()})
+                stagnant = 0
 
         established_source = "llm" if established else "fallback"
         if not established:
@@ -190,10 +297,17 @@ class ChessCoach:
                 e["horizon"] = None
             viable = established
 
-        # sandbox the viable set (decreasing beam width / horizon) -- trees for
-        # display, and the ranking that guided/assist select from.
-        seeds = [chess.Move.from_uci(v["uci"]) for v in viable]
-        sandbox = run_sandbox(self.pool, board, seeds, cfg.sandbox)
+        # sandbox the viable set -- trees for display, and the ranking that
+        # guided/assist select from. Engine: Stockfish (fast, default) or the
+        # LLM-calculated variant (the model plays each line out, ~27+ calls).
+        sb_engine = (sandbox_engine or cfg.sandbox.get("engine", "stockfish")).lower()
+        if sb_engine == "llm" and llm:
+            sandbox = self._llm_sandbox(board, [v["uci"] for v in viable], note)
+        else:
+            sb_engine = "stockfish"
+            seeds = [chess.Move.from_uci(v["uci"]) for v in viable]
+            sandbox = run_sandbox(self.pool, board, seeds, cfg.sandbox)
+            sandbox["engine"] = "stockfish"
 
         # ---- Selection ----
         autonomous_pick = None
@@ -236,6 +350,7 @@ class ChessCoach:
         rec = {
             "fen_before": board_before.fen(),
             "mode": mode,
+            "sandbox_engine": sb_engine,
             "established": established,
             "established_source": established_source,
             "established_count": len(established),

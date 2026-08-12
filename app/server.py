@@ -82,7 +82,8 @@ def human_move():
 def engine_move():
     data = request.get_json(force=True, silent=True) or {}
     with _lock:
-        return jsonify(coach().engine_move(mode=data.get("mode")))
+        return jsonify(coach().engine_move(mode=data.get("mode"),
+                                           sandbox_engine=data.get("sandbox_engine")))
 
 
 @app.post("/api/analyze")

@@ -95,6 +95,13 @@ DEFAULTS: dict[str, Any] = {
         "candidate_k": 3,             # the player must establish this many legal moves
         "max_establish_attempts": 64, # backstop only (endless-garbage guard); real illegal
                                       # retries converge on the finite move set well before this
+        "no_progress_cap": 8,         # stop after this many consecutive REPEAT tries (a new
+                                      # distinct illegal/legal resets it, so real tries are unbounded)
+        # Sandbox engine: "stockfish" (fast, default) plays the lines out itself;
+        # "llm" makes the model calculate each line (both sides), ~27+ calls/turn.
+        "engine": "stockfish",
+        "our_moves": 5,               # llm sandbox: how many OF OUR moves deep (9 plies)
+        "llm_calc_budget": 60,        # llm sandbox: max model calls per turn (safety cap)
     },
 
     # How the move is chosen from the player's OWN established slate:

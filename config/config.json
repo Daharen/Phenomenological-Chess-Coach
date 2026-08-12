@@ -51,7 +51,11 @@
     "beam_schedule": [3, 2, 1, 1, 1],
     "collapse_cp": -300,
     "candidate_k": 3,
-    "max_establish_attempts": 64
+    "max_establish_attempts": 64,
+    "no_progress_cap": 8,
+    "engine": "stockfish",
+    "our_moves": 5,
+    "llm_calc_budget": 60
   },
 
   "selection_mode": "guided",

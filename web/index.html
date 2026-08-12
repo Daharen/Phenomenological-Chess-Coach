@@ -102,6 +102,12 @@
       <option value="autonomous">Autonomous — LLM picks</option>
     </select>
   </label>
+  <label class="tag">Calc
+    <select id="calc" title="Who plays out the candidate lines in the sandbox">
+      <option value="stockfish" selected>Stockfish (fast)</option>
+      <option value="llm">LLM 5-deep (27+ calls, slow)</option>
+    </select>
+  </label>
   <button id="new" class="primary">New game</button>
 </header>
 
@@ -258,8 +264,10 @@ async function doHuman(uci){
 }
 async function engineMove(){
   if(BUSY||!ST||ST.is_game_over)return;
-  BUSY=true;flash('Engine is thinking <span class="spin"></span>');
-  const r=await api('/api/engine_move','POST',{mode:$('#mode').value});
+  BUSY=true;
+  const calc=$('#calc').value;
+  flash((calc==='llm'?'LLM is calculating ~27 moves 5-deep (this is slow) ':'Engine is thinking ')+'<span class="spin"></span>');
+  const r=await api('/api/engine_move','POST',{mode:$('#mode').value, sandbox_engine:calc});
   if(!r.ok){flash(r.error||'error','warn');BUSY=false;return;}
   ST=r.state;LASTMV=r.turn.chosen.uci;drawBoard();renderState();renderTurn(r.turn);
   flash(`Engine played <b>${r.turn.chosen.san}</b>`);
@@ -306,8 +314,11 @@ function renderTurn(t){
   if(t.crisis_triggered)html+='<div class="pill crisis" style="margin-bottom:6px">⚠ Blunder Protocol — switched to crisis management</div>';
   // establishment banner
   const estCls = t.established_source==='fallback' ? 'warn' : 'rt';
+  const calcTxt = t.sandbox_engine==='llm'
+    ? ('LLM '+((t.sandbox&&t.sandbox.our_moves)||5)+'-deep · '+((t.sandbox&&t.sandbox.calls_used)!=null?t.sandbox.calls_used:'?')+' moves calculated')
+    : 'Stockfish';
   html+=`<div class="traj" style="margin-bottom:6px">
-    <b>Mode:</b> ${modeName} &nbsp;·&nbsp;
+    <b>Mode:</b> ${modeName} &nbsp;·&nbsp; <b>Calc:</b> ${calcTxt} &nbsp;·&nbsp;
     <b>Player established</b> <span class="${estCls}">${t.established_count}/${t.target}</span>
     candidate${t.target===1?'':'s'} (${t.established_source==='llm'?'its own — LLM':'Stockfish fallback (no LLM)'})
     &nbsp;·&nbsp; <b>picked by</b> ${escape(t.selection_by||'')}
