@@ -51,7 +51,7 @@
     "beam_schedule": [3, 2, 1, 1, 1],
     "collapse_cp": -300,
     "candidate_k": 3,
-    "max_candidate_rounds": 6
+    "max_establish_attempts": 64
   },
 
   "selection_mode": "guided",

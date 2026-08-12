@@ -1,12 +1,15 @@
 """
 Agent 2 -- the One-Off Frontier Player.
 
-The player establishes its OWN slate of candidate moves.  Given the board and the
-orchestrator's continuity payload, it proposes a LIST of distinct legal moves
-(the moves it would genuinely consider).  Illegal proposals are kicked back and
-blacklisted for the turn (told only that they're illegal), and the loop keeps
-asking until it has the required number of distinct legal moves -- so Stockfish
-never substitutes its own picks to fill the slate.
+The player proposes ONE move at a time from an almost-empty context: just the
+board (FEN) and, at most, a one-line general note from the orchestrator. It gets
+NO manifest dump, NO move history, and NO precomputed legal/illegal move list --
+small models play worse when a move list is stuffed into the prompt.
+
+Moves enter a ban-list only by trial: a proposal that fails legality is added to
+the turn's `illegal` list and the proposer is asked again from a fresh minimal
+state (see game/coach.py). The slate of K distinct legal candidates is built the
+same way -- one legal move at a time.
 
 Selection among the established moves depends on the mode (see game/coach.py):
   * guided/assist  -> Stockfish ranks (sandbox) and picks.
@@ -18,17 +21,15 @@ Stockfish top-moves are only used as candidates when there is NO LLM available
 
 from __future__ import annotations
 
-import random
-
 import chess
 
 from .base import LLMClient
 from ..engine.legality import parse_move
 from ..engine.stockfish_pool import StockfishPool
 
-SYS_CANDS = ("You are a strong, intuitive chess player (about master strength). You "
-             "propose the moves YOU would actually consider -- from plans, patterns and "
-             "short concrete lines, not engine lookups. Always answer in strict JSON.")
+SYS_ONE = ("You are a chess player choosing ONE move from the position in front of you. "
+           "Judge from the board itself. Keep the rationale to a single short sentence. "
+           "Answer in strict JSON only.")
 
 SYS_CHOOSE = ("You are choosing which of YOUR OWN candidate moves to actually play, using "
               "your own judgment -- no engine help. Always answer in strict JSON.")
@@ -54,51 +55,39 @@ class OneOffPlayer:
         self.pool = pool
         self.cfg = cfg
 
-    # -- establish a LIST of the player's own candidate moves (LLM only) --------
-    def propose_candidates(self, board: chess.Board, context: str, forbidden: list[str],
-                           need: int = 3, feedback: str | None = None) -> dict:
-        """Ask the LLM for `need` distinct legal candidate moves.
-
-        Returns {"legal": [Proposal...], "illegal": [raw str...]}. No Stockfish."""
+    # -- propose ONE move from a minimal, trial-accumulated context ------------
+    def propose_one(self, board: chess.Board, note: str = "",
+                    ruled_out: list[str] | None = None,
+                    already_chosen: list[str] | None = None) -> "Proposal":
+        """Ask the LLM for a single move. Context is FEN + one-line note + the
+        small trial-accumulated ban/chosen lists (only when non-empty). Returns a
+        Proposal; move=None means the response was illegal/unparseable (raw kept
+        so the caller can add it to the illegal list)."""
         if not self.client.available:
-            return {"legal": [], "illegal": []}
-        forbid = ""
-        if forbidden:
-            forbid = ("\nAlready ruled out this turn (illegal or already listed) -- do NOT "
-                      "repeat these: " + ", ".join(forbidden))
-        fb = f"\n{feedback}\n" if feedback else ""
-        user = (
-            f"{context}{forbid}{fb}\n"
-            f"Propose your top {need} DISTINCT legal candidate moves for the side to move "
-            f"-- the moves you would genuinely consider. Respond as JSON: "
-            f'{{"candidates":[{{"move":"SAN or UCI","rationale":"one sentence"}}, ...]}} '
-            f"with at least {need} entries. Only output JSON."
-        )
-        data = self.client.chat_json(SYS_CANDS, user, temperature=0.6, max_tokens=700)
-        legal: list[Proposal] = []
-        illegal: list[str] = []
+            return Proposal(None, None, "(no LLM)", "fallback", raw="")
+        parts = [
+            f"FEN: {board.fen()}",
+            f"You are playing {'White' if board.turn else 'Black'}; it is your move.",
+        ]
+        if note:
+            parts.append(f"General plan (a hint only): {note}")
+        if ruled_out:
+            parts.append("Do NOT choose these (already tried, not allowed): "
+                         + ", ".join(ruled_out))
+        if already_chosen:
+            parts.append("You already chose: " + ", ".join(already_chosen)
+                         + " -- pick a DIFFERENT legal move.")
+        parts.append('Respond as JSON: {"move":"SAN or UCI","rationale":"one short sentence"}. '
+                     "Only output JSON.")
+        data = self.client.chat_json(SYS_ONE, "\n".join(parts), temperature=0.5, max_tokens=220)
         if not data:
-            return {"legal": legal, "illegal": illegal}
-        cands = data.get("candidates")
-        if isinstance(cands, dict):
-            cands = list(cands.values())
-        if not isinstance(cands, list):
-            # tolerate a single {move, rationale} or a bare {move: ...}
-            cands = [data] if data.get("move") else []
-        for c in cands:
-            if isinstance(c, str):
-                raw, rat = c, ""
-            elif isinstance(c, dict):
-                raw, rat = str(c.get("move", "")), str(c.get("rationale", "")).strip()
-            else:
-                continue
-            mv = parse_move(board, raw)
-            if mv is None:
-                if raw:
-                    illegal.append(raw)
-            else:
-                legal.append(Proposal(mv, board.san(mv), rat, "llm", raw=raw))
-        return {"legal": legal, "illegal": illegal}
+            return Proposal(None, None, "(no response)", "llm", raw="")
+        raw = str(data.get("move", ""))
+        rat = str(data.get("rationale", "")).strip()
+        mv = parse_move(board, raw)
+        if mv is None:
+            return Proposal(None, raw or None, rat or "(illegal/unparsed)", "llm", raw=raw)
+        return Proposal(mv, board.san(mv), rat, "llm", raw=raw)
 
     # -- autonomous selection among the player's own candidates ----------------
     def choose_among(self, board: chess.Board, context: str, candidates: list[dict]) -> dict | None:

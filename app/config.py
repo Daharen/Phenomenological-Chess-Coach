@@ -92,8 +92,9 @@ DEFAULTS: dict[str, Any] = {
         "max_horizon": 5,
         "beam_schedule": [3, 2, 1, 1, 1],
         "collapse_cp": -300,        # eval (mover pov) at/below this = tactical collapse
-        "candidate_k": 3,           # the player must establish this many legal moves
-        "max_candidate_rounds": 6,  # LLM rounds allowed to reach candidate_k distinct legals
+        "candidate_k": 3,             # the player must establish this many legal moves
+        "max_establish_attempts": 64, # backstop only (endless-garbage guard); real illegal
+                                      # retries converge on the finite move set well before this
     },
 
     # How the move is chosen from the player's OWN established slate:

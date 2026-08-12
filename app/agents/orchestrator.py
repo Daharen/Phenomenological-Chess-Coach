@@ -69,7 +69,16 @@ class Orchestrator:
         return self.memory.manifest.to_dict()
 
     # -------------------------------------------------------------------------
-    def context_for_player(self, board: chess.Board) -> str:
+    def minimal_note(self, board: chess.Board) -> str:
+        """One short line for the reflex proposer -- a general idea only, never
+        the full manifest. Empty string if there is nothing worth saying."""
+        theme = (self.memory.manifest.theme or "").strip()
+        if not theme:
+            return ""
+        return theme if len(theme) <= 160 else (theme[:157] + "...")
+
+    # -------------------------------------------------------------------------
+    def context_for_player(self, board: chess.Board) -> str:  # (rich; no longer fed to the mover)
         """The continuous payload handed to the one-off player: FEN + history +
         manifest + the current position's detected concepts."""
         m = self.memory.manifest

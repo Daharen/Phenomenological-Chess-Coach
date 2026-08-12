@@ -101,53 +101,40 @@ class ChessCoach:
         deep_mt = lvl.get("deep_movetime", 1.5)
         class_depth = cfg.classification["class_depth"]
         K = cfg.sandbox.get("candidate_k", 3)
-        max_rounds = cfg.sandbox.get("max_candidate_rounds", 6)
+        max_attempts = cfg.sandbox.get("max_establish_attempts", 64)
         mode = (mode or cfg.raw.get("selection_mode", "guided")).lower()
         if mode not in ("guided", "assist", "autonomous"):
             mode = "guided"
 
-        context = self.orch.context_for_player(board)
+        note = self.orch.minimal_note(board)      # one short line; NOT the manifest
         num_legal = board.legal_moves.count()
         target = min(K, num_legal)
         llm = self.client.available
 
         # ---- Establishment: the player builds its OWN slate of >=target legal
-        #      moves. Stockfish is NOT used to fill it. The only relaxation is
-        #      when the position simply has fewer than K legal moves.
+        #      moves, ONE move at a time, from a minimal context. Illegal tries
+        #      accumulate by trial (unbounded in intent; the finite move set
+        #      converges -- the attempt backstop only guards against endless
+        #      unparseable garbage). Stockfish is NOT used to fill the slate.
         established: list[dict] = []
-        seen: set[str] = set()
-        blocked: list[str] = []
-        illegal_attempts: list[str] = []
-        rounds = 0
+        illegal_attempts: list[str] = []          # raw strings tried and found illegal
+        seen_illegal: set[str] = set()
+        attempts = 0
         if llm:
-            feedback = None
-            stagnant = 0
-            while len(established) < target and rounds < max_rounds:
-                rounds += 1
-                need = max(target - len(established), 1)
-                res = self.player.propose_candidates(board, context, blocked,
-                                                     need=max(need, target), feedback=feedback)
-                for raw in res["illegal"]:
-                    illegal_attempts.append(raw)
-                    if raw not in blocked:
-                        blocked.append(raw)
-                added = 0
-                for p in res["legal"]:
-                    uci = p.move.uci()
-                    if uci in seen:
-                        continue
-                    seen.add(uci)
-                    blocked.append(uci)      # ask for *different* ones next round
-                    added += 1
-                    established.append({"uci": uci, "san": p.san, "proposal": p.to_dict()})
-                    if len(established) >= target:
-                        break
-                feedback = (f"You have {len(established)} of {target} distinct legal "
-                            f"candidate(s). Give {max(target - len(established), 1)} MORE "
-                            f"distinct legal move(s), different from those already listed.")
-                stagnant = stagnant + 1 if added == 0 else 0
-                if stagnant >= 2:
-                    break
+            while len(established) < target and attempts < max_attempts:
+                attempts += 1
+                chosen_ucis = [e["uci"] for e in established]
+                prop = self.player.propose_one(board, note, illegal_attempts, chosen_ucis)
+                if prop.move is None or prop.move not in board.legal_moves:
+                    raw = (prop.raw or "").strip() or "?"
+                    if raw not in seen_illegal:
+                        seen_illegal.add(raw)
+                        illegal_attempts.append(raw)
+                    continue
+                uci = prop.move.uci()
+                if uci in {e["uci"] for e in established}:
+                    continue                      # already have it; ask for a different one
+                established.append({"uci": uci, "san": prop.san, "proposal": prop.to_dict()})
 
         established_source = "llm" if established else "fallback"
         if not established:
@@ -211,7 +198,7 @@ class ChessCoach:
         # ---- Selection ----
         autonomous_pick = None
         if mode == "autonomous" and llm:
-            pick = self.player.choose_among(board, context, viable)
+            pick = self.player.choose_among(board, note, viable)
             if pick and pick["uci"] in {v["uci"] for v in viable}:
                 chosen_uci = pick["uci"]
                 autonomous_pick = pick
@@ -252,6 +239,7 @@ class ChessCoach:
             "established": established,
             "established_source": established_source,
             "established_count": len(established),
+            "establish_attempts": attempts,
             "target": target,
             "num_legal": num_legal,
             "selection_by": selection_by,
