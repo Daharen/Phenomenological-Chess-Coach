@@ -51,9 +51,10 @@
     "beam_schedule": [3, 2, 1, 1, 1],
     "collapse_cp": -300,
     "candidate_k": 3,
-    "max_player_attempts": 6,
-    "max_illegal_retries": 8
+    "max_candidate_rounds": 6
   },
+
+  "selection_mode": "guided",
 
   "server": {
     "host": "127.0.0.1",

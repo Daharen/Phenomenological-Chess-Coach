@@ -95,6 +95,13 @@
       <option value="null">Stockfish-only</option>
     </select>
   </label>
+  <label class="tag">Selection
+    <select id="mode" title="How the move is chosen from the player's own 3 established moves">
+      <option value="guided" selected>Guided — SF vetoes + picks</option>
+      <option value="assist">Assist — SF picks best of 3</option>
+      <option value="autonomous">Autonomous — LLM picks</option>
+    </select>
+  </label>
   <button id="new" class="primary">New game</button>
 </header>
 
@@ -252,7 +259,7 @@ async function doHuman(uci){
 async function engineMove(){
   if(BUSY||!ST||ST.is_game_over)return;
   BUSY=true;flash('Engine is thinking <span class="spin"></span>');
-  const r=await api('/api/engine_move','POST',{});
+  const r=await api('/api/engine_move','POST',{mode:$('#mode').value});
   if(!r.ok){flash(r.error||'error','warn');BUSY=false;return;}
   ST=r.state;LASTMV=r.turn.chosen.uci;drawBoard();renderState();renderTurn(r.turn);
   flash(`Engine played <b>${r.turn.chosen.san}</b>`);
@@ -288,24 +295,44 @@ function histStr(h){if(!h||!h.length)return '—';let s='';for(let i=0;i<h.lengt
 function renderTurn(t){
   const cl=t.chosen.classification;
   setEval(t.our_eval_cp, ST.engine_color);
+  // source map: seed uci -> "llm" | "fallback"
+  const srcOf={};
+  for(const e of (t.established||[]))srcOf[e.uci]=(e.proposal&&e.proposal.source)||'?';
+  const srcBadge=u=>{const s=srcOf[u]; if(!s)return '';
+    return s==='llm'?'<span class="pill best" title="the LLM proposed this move">LLM</span>'
+      :'<span class="pill inaccuracy" title="Stockfish candidate (no LLM)">SF</span>';};
+  const modeName={guided:'Guided',assist:'Assist',autonomous:'Autonomous'}[t.mode]||t.mode;
   let html='';
   if(t.crisis_triggered)html+='<div class="pill crisis" style="margin-bottom:6px">⚠ Blunder Protocol — switched to crisis management</div>';
-  html+=`<div class="cand chosen"><b>Chosen ▶ ${t.chosen.san}</b> <span class="pill ${cl.label}">${cl.label}</span>
+  // establishment banner
+  const estCls = t.established_source==='fallback' ? 'warn' : 'rt';
+  html+=`<div class="traj" style="margin-bottom:6px">
+    <b>Mode:</b> ${modeName} &nbsp;·&nbsp;
+    <b>Player established</b> <span class="${estCls}">${t.established_count}/${t.target}</span>
+    candidate${t.target===1?'':'s'} (${t.established_source==='llm'?'its own — LLM':'Stockfish fallback (no LLM)'})
+    &nbsp;·&nbsp; <b>picked by</b> ${escape(t.selection_by||'')}
+    ${t.num_legal<3?(' &nbsp;·&nbsp; <span class="muted">only '+t.num_legal+' legal move'+(t.num_legal===1?'':'s')+' here</span>'):''}
+  </div>`;
+  if(t.established_source==='fallback')
+    html+='<div class="traj warn" style="margin-bottom:4px">No legal LLM choices were established — used a Stockfish candidate slate.</div>';
+  html+=`<div class="cand chosen"><b>Chosen ▶ ${t.chosen.san}</b> ${srcBadge(t.chosen.uci)} <span class="pill ${cl.label}">${cl.label}</span>
     <span class="muted">${cl.played_cp}cp${t.chosen.beyond_horizon?' · beyond-horizon (allowed)':''}</span>
     <div class="traj">${escape(t.chosen.rationale||'')}</div></div>`;
-  // sandbox lines
+  if(t.autonomous_pick&&t.autonomous_pick.reasoning)
+    html+=`<div class="traj rt" style="margin:-2px 0 6px">LLM's choice: ${escape(t.autonomous_pick.reasoning)}</div>`;
+  // sandbox lines (the established move trees)
   const lines=(t.sandbox&&t.sandbox.lines)||[];
   for(const ln of lines){
     const chosen=ln.seed_uci===t.chosen.uci;
     const traj=ln.steps.map(s=>`<span class="mono">${s.san}</span><span class="muted">(${s.eval_cp},d${s.depth_used})</span>`).join(' ');
-    html+=`<div class="cand ${chosen?'chosen':''}"><b>${ln.seed_san}</b> ${ln.collapsed?'<span class="pill blunder">collapse@'+ln.collapse_ply+'</span>':''}
+    html+=`<div class="cand ${chosen?'chosen':''}"><b>${ln.seed_san}</b> ${srcBadge(ln.seed_uci)} ${ln.collapsed?'<span class="pill blunder">collapse@'+ln.collapse_ply+'</span>':''}
       <div class="traj">${traj||'<span class="muted">—</span>'}</div></div>`;
   }
-  // rejected
+  // rejected (guided vetoes)
   for(const r of (t.rejected||[])){
     const rc=r.classification;
     const cons=(r.consequence&&r.consequence.trajectory||[]).map(s=>s.san).join(' ');
-    html+=`<div class="cand rej"><b>Rejected ✕ ${r.san}</b> <span class="pill ${rc.label}">${rc.label}</span>
+    html+=`<div class="cand rej"><b>Vetoed ✕ ${r.san}</b> ${srcBadge(r.uci)} <span class="pill ${rc.label}">${rc.label}</span>
       <div class="traj">${escape(r.reason)}${cons?(' — <span class="mono">'+cons+'</span>'):''}</div></div>`;
   }
   if(t.illegal_attempts&&t.illegal_attempts.length)

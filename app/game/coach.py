@@ -92,7 +92,7 @@ class ChessCoach:
                 "concepts": concepts, "state": self.state()}
 
     # -- the engine's phenomenological turn ------------------------------------
-    def engine_move(self) -> dict:
+    def engine_move(self, mode: str | None = None) -> dict:
         if self.board.is_game_over():
             return {"ok": False, "error": "game over", "state": self.state()}
         board = self.board
@@ -101,97 +101,130 @@ class ChessCoach:
         deep_mt = lvl.get("deep_movetime", 1.5)
         class_depth = cfg.classification["class_depth"]
         K = cfg.sandbox.get("candidate_k", 3)
-        max_attempts = cfg.sandbox.get("max_player_attempts", 6)
-        max_illegal = cfg.sandbox.get("max_illegal_retries", 8)
+        max_rounds = cfg.sandbox.get("max_candidate_rounds", 6)
+        mode = (mode or cfg.raw.get("selection_mode", "guided")).lower()
+        if mode not in ("guided", "assist", "autonomous"):
+            mode = "guided"
 
         context = self.orch.context_for_player(board)
+        num_legal = board.legal_moves.count()
+        target = min(K, num_legal)
+        llm = self.client.available
 
-        viable: list[dict] = []
-        rejected: list[dict] = []
-        illegal_attempts: list[str] = []
-        blocked: list[str] = []          # uci ruled out (illegal or refuted)
+        # ---- Establishment: the player builds its OWN slate of >=target legal
+        #      moves. Stockfish is NOT used to fill it. The only relaxation is
+        #      when the position simply has fewer than K legal moves.
+        established: list[dict] = []
         seen: set[str] = set()
-        feedback = None
-        attempts = 0
-        illegal_count = 0
-
-        while len(viable) < K and attempts < max_attempts:
-            prop = self.player.propose(board, context, blocked, feedback, class_depth)
-
-            # illegal / unparseable
-            if prop.move is None or prop.move not in board.legal_moves:
-                illegal_count += 1
-                raw = prop.raw or (prop.move.uci() if prop.move else "?")
-                illegal_attempts.append(raw)
-                if raw not in blocked:
-                    blocked.append(raw)
-                feedback = (f"The move '{raw}' is not legal here. Pick a different, "
-                            f"legal move.")
-                if illegal_count >= max_illegal:
+        blocked: list[str] = []
+        illegal_attempts: list[str] = []
+        rounds = 0
+        if llm:
+            feedback = None
+            stagnant = 0
+            while len(established) < target and rounds < max_rounds:
+                rounds += 1
+                need = max(target - len(established), 1)
+                res = self.player.propose_candidates(board, context, blocked,
+                                                     need=max(need, target), feedback=feedback)
+                for raw in res["illegal"]:
+                    illegal_attempts.append(raw)
+                    if raw not in blocked:
+                        blocked.append(raw)
+                added = 0
+                for p in res["legal"]:
+                    uci = p.move.uci()
+                    if uci in seen:
+                        continue
+                    seen.add(uci)
+                    blocked.append(uci)      # ask for *different* ones next round
+                    added += 1
+                    established.append({"uci": uci, "san": p.san, "proposal": p.to_dict()})
+                    if len(established) >= target:
+                        break
+                feedback = (f"You have {len(established)} of {target} distinct legal "
+                            f"candidate(s). Give {max(target - len(established), 1)} MORE "
+                            f"distinct legal move(s), different from those already listed.")
+                stagnant = stagnant + 1 if added == 0 else 0
+                if stagnant >= 2:
                     break
-                continue
 
-            uci = prop.move.uci()
-            if uci in seen:
-                if uci not in blocked:
-                    blocked.append(uci)
-                feedback = "You already proposed that move; choose a different candidate."
-                attempts += 1
-                continue
-            seen.add(uci)
-            attempts += 1
+        established_source = "llm" if established else "fallback"
+        if not established:
+            # No LLM (Stockfish-only brain) or the model produced nothing legal:
+            # fall back to a Stockfish candidate slate so a move can still be made.
+            for mv in self.player.stockfish_top(board, n=target, class_depth=class_depth):
+                established.append({"uci": mv.uci(), "san": board.san(mv),
+                                    "proposal": {"uci": mv.uci(), "san": board.san(mv),
+                                                 "rationale": "Stockfish candidate (no LLM choices available).",
+                                                 "source": "fallback"}})
 
-            cls = classify_move(self.pool, board, prop.move, cfg.classification, depth=class_depth)
+        # classify every established candidate (for display / gate / coaching);
+        # this is never shown to the autonomous picker.
+        for e in established:
+            cls = classify_move(self.pool, board, chess.Move.from_uci(e["uci"]),
+                                cfg.classification, depth=class_depth)
+            e["classification"] = cls.to_dict()
 
-            if not cls.flagged:
-                viable.append({"uci": uci, "san": prop.san, "proposal": prop.to_dict(),
-                               "classification": cls.to_dict(), "horizon": None,
-                               "beyond_horizon": False})
-                feedback = None
-                continue
+        # ---- Mode-specific filtering ----
+        rejected: list[dict] = []
+        if mode == "guided":
+            viable = []
+            for e in established:
+                if not e["classification"]["flagged"]:
+                    e["beyond_horizon"] = False
+                    e["horizon"] = None
+                    viable.append(e)
+                    continue
+                mv = chess.Move.from_uci(e["uci"])
+                hv = assess_horizon(self.pool, board, mv, cfg.classification,
+                                    horizon_plies=lvl["horizon"], deep_movetime=deep_mt)
+                if not hv.within_horizon:
+                    e["beyond_horizon"] = True
+                    e["horizon"] = hv.to_dict()
+                    viable.append(e)
+                else:
+                    cons = consequence_line(self.pool, board, mv,
+                                            plies=lvl["horizon"], depth=class_depth)
+                    e["horizon"] = hv.to_dict()
+                    rejected.append({
+                        "uci": e["uci"], "san": e["san"], "proposal": e["proposal"],
+                        "classification": e["classification"], "horizon": hv.to_dict(),
+                        "consequence": cons,
+                        "reason": (f"{e['classification']['label']} understandable within the "
+                                   f"{lvl['horizon']}-ply horizon (refutation by depth "
+                                   f"{hv.reveal_depth})"),
+                    })
+            if not viable:                 # every candidate vetoed -> pick least-bad
+                viable = established
+        else:
+            for e in established:
+                e["beyond_horizon"] = False
+                e["horizon"] = None
+            viable = established
 
-            # flagged -> comprehension-horizon gate
-            hv = assess_horizon(self.pool, board, prop.move, cfg.classification,
-                                horizon_plies=lvl["horizon"], deep_movetime=deep_mt)
-            if not hv.within_horizon:
-                # the refutation lives beyond the player's horizon -> allow it
-                viable.append({"uci": uci, "san": prop.san, "proposal": prop.to_dict(),
-                               "classification": cls.to_dict(), "horizon": hv.to_dict(),
-                               "beyond_horizon": True})
-                feedback = None
-                continue
-
-            # within horizon -> reject, show the consequence, try again
-            cons = consequence_line(self.pool, board, prop.move,
-                                    plies=lvl["horizon"], depth=class_depth)
-            first = " ".join(s["san"] for s in cons["trajectory"][:5])
-            reason = (f"{cls.label} understandable within the {lvl['horizon']}-ply "
-                      f"horizon (refutation visible by depth {hv.reveal_depth})")
-            rejected.append({"uci": uci, "san": prop.san, "reason": reason,
-                             "classification": cls.to_dict(), "horizon": hv.to_dict(),
-                             "consequence": cons})
-            if uci not in blocked:
-                blocked.append(uci)
-            feedback = (f"Your move {prop.san} is a {cls.label}. After {first}, the "
-                        f"evaluation falls to about {cls.played_cp}cp for you. "
-                        f"Choose a sounder move.")
-
-        # safety net: if nothing viable, take Stockfish's best directly
-        if not viable:
-            bm = self.pool.best_move(board, movetime=deep_mt)
-            if bm is None:
-                return {"ok": False, "error": "no legal moves", "state": self.state()}
-            cls = classify_move(self.pool, board, bm, cfg.classification, depth=class_depth)
-            viable.append({"uci": bm.uci(), "san": board.san(bm),
-                           "proposal": {"uci": bm.uci(), "san": board.san(bm),
-                                        "rationale": "Engine safety net.", "source": "engine"},
-                           "classification": cls.to_dict(), "horizon": None,
-                           "beyond_horizon": False, "safety_net": True})
-
-        # sandbox the viable candidates (decreasing beam width / horizon)
+        # sandbox the viable set (decreasing beam width / horizon) -- trees for
+        # display, and the ranking that guided/assist select from.
         seeds = [chess.Move.from_uci(v["uci"]) for v in viable]
         sandbox = run_sandbox(self.pool, board, seeds, cfg.sandbox)
-        chosen_uci = sandbox.get("best_uci") or viable[0]["uci"]
+
+        # ---- Selection ----
+        autonomous_pick = None
+        if mode == "autonomous" and llm:
+            pick = self.player.choose_among(board, context, viable)
+            if pick and pick["uci"] in {v["uci"] for v in viable}:
+                chosen_uci = pick["uci"]
+                autonomous_pick = pick
+                selection_by = "llm"
+            else:
+                chosen_uci = viable[0]["uci"]
+                selection_by = "llm (unparsed pick; used first candidate)"
+        else:
+            chosen_uci = sandbox.get("best_uci") or viable[0]["uci"]
+            selection_by = "stockfish"
+            if mode == "autonomous" and not llm:
+                selection_by = "stockfish (no LLM available to pick)"
+
         chosen_v = next((v for v in viable if v["uci"] == chosen_uci), viable[0])
         chosen_move = chess.Move.from_uci(chosen_uci)
 
@@ -204,17 +237,26 @@ class ChessCoach:
         board.push(chosen_move)
         concepts = detect_concepts(board, chosen_move, board_before)
 
-        # eval from the engine's perspective for the Blunder Protocol
         our_eval = self.pool.eval_cp(board, depth=class_depth, pov=self.engine_color)
         crisis = self.memory.note_eval(our_eval)
         self.memory.recover_if_stable(our_eval)
         self.orch.update_after_move(board, chosen_move,
                                     chosen_v.get("classification"), our_eval)
 
+        chosen_rationale = (autonomous_pick["reasoning"] if autonomous_pick and autonomous_pick.get("reasoning")
+                            else chosen_v["proposal"].get("rationale"))
+
         rec = {
             "fen_before": board_before.fen(),
-            "chosen": {**chosen_v, "san": chosen_san,
-                       "rationale": chosen_v["proposal"].get("rationale")},
+            "mode": mode,
+            "established": established,
+            "established_source": established_source,
+            "established_count": len(established),
+            "target": target,
+            "num_legal": num_legal,
+            "selection_by": selection_by,
+            "autonomous_pick": autonomous_pick,
+            "chosen": {**chosen_v, "san": chosen_san, "rationale": chosen_rationale},
             "viable": viable,
             "rejected": rejected,
             "illegal_attempts": illegal_attempts,
@@ -230,7 +272,8 @@ class ChessCoach:
         rec["coaching"] = coaching
         self.memory.log_turn({
             "move": chosen_san, "uci": chosen_uci, "eval_cp": our_eval,
-            "label": chosen_v["classification"]["label"],
+            "label": chosen_v["classification"]["label"], "mode": mode,
+            "established": len(established), "source": established_source,
             "n_rejected": len(rejected), "n_illegal": len(illegal_attempts),
             "crisis": crisis,
         })

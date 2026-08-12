@@ -91,11 +91,16 @@ DEFAULTS: dict[str, Any] = {
     "sandbox": {
         "max_horizon": 5,
         "beam_schedule": [3, 2, 1, 1, 1],
-        "collapse_cp": -300,       # eval (mover pov) at/below this = tactical collapse
-        "candidate_k": 3,          # K viable candidates carried into the sandbox
-        "max_player_attempts": 6,  # bound on one-off player retries per turn
-        "max_illegal_retries": 8,  # bound on illegal-move kickbacks per turn
+        "collapse_cp": -300,        # eval (mover pov) at/below this = tactical collapse
+        "candidate_k": 3,           # the player must establish this many legal moves
+        "max_candidate_rounds": 6,  # LLM rounds allowed to reach candidate_k distinct legals
     },
+
+    # How the move is chosen from the player's OWN established slate:
+    #   guided     -> Stockfish vetoes within-horizon blunders + picks best (sandbox)
+    #   assist     -> Stockfish just ranks and picks the best of the slate (no veto)
+    #   autonomous -> the LLM itself picks; Stockfish only checks legality
+    "selection_mode": "guided",
 
     "server": {
         "host": "127.0.0.1",
