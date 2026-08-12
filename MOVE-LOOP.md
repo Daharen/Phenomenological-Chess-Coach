@@ -55,10 +55,29 @@ So today, move *quality* is still judged exactly as the naive engine judged it �
 that is intentional. Intelligence is added later by the evaluator modules, not by
 enlarging the proposer's prompt.
 
+## Implemented deterministic modules
+
+- **Module 1 — material safety (`app/engine/deteval.py`).** Runs *after* a move
+  is selected. For every candidate the proposer established, it computes a 1-ply
+  material score: `net_cp = (material after our move) − (opponent's best legal
+  capture, resolved by SEE)`. If the *chosen* move hangs ≥ `hang_threshold_cp`
+  (default 100) more than a safe sibling would, it **vetoes** and substitutes the
+  safe sibling in `guided`/`assist` (and, if `veto_in_autonomous`, in
+  `autonomous`), otherwise it **warns** and leaves the LLM's pick alone. It is
+  pin/check-aware because it drives off *legal* captures. Scope is honestly just
+  MATERIAL, one ply — it catches "you hung your knight" and "that capture loses
+  to the recapture," not forks-next-move or positional compensation.
+  - Fixed a latent bug in `concepts.see` this module sits on: the old iterative
+    fold ran one phantom recapture too many and *undervalued every undefended
+    capture* — it scored winning a free pawn with a knight as **−220**. Replaced
+    with an exact recursive SEE (top-level capture forced/signed, recaptures
+    optional). This also sharpens the existing hanging-piece / fork / sacrifice
+    detectors that share `see`.
+
 ## Planned (each a separate module, shipped one at a time)
 
-- **Deterministic evaluator modules** (added individually): hanging / en-prise
-  (SEE), pin-aware capture legality, 1-ply fork/skewer/discovered threats,
+- **Further deterministic evaluator modules** (added individually):
+  pin-aware capture legality, 1-ply fork/skewer/discovered threats,
   net-material swing, king-line attacker scan, back-rank, … Each emits a typed
   fact `{type, squares, severity, one-line phenomenological sentence, fact_id}`.
 - **Appeal step:** after a move is selected, the evaluator flags it "bad because

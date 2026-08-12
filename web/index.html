@@ -344,6 +344,16 @@ function renderTurn(t){
     <div class="traj">${escape(t.chosen.rationale||'')}</div></div>`;
   if(t.autonomous_pick&&t.autonomous_pick.reasoning)
     html+=`<div class="traj rt" style="margin:-2px 0 6px">LLM's choice: ${escape(t.autonomous_pick.reasoning)}</div>`;
+  // deterministic evaluator -- module 1: material safety
+  if(t.deteval){
+    const d=t.deteval; let dl='';
+    if(d.action==='re-picked') dl=`<span class="pill blunder">safety veto</span> a candidate hung material (net ${d.chosen_net}cp); re-picked the safe move (net ${d.best_net}cp).`;
+    else if(d.action==='warned') dl=`<span class="pill mistake">safety warning</span> the LLM's pick hangs material (net ${d.chosen_net}cp); a safer candidate netted ${d.best_net}cp.`;
+    else dl=`<span class="pill best">safe</span> the chosen move keeps material (net ${d.chosen_net}cp).`;
+    const cand=(d.per_candidate||[]).map(c=>`<span class="mono">${c.san}</span> <span class="muted">${c.net_cp>=0?'+':''}${c.net_cp}${c.loss_cp>0?(' · hangs '+c.loss_cp+'@'+c.loss_sq):''}</span>`).join(' &nbsp;·&nbsp; ');
+    html+=`<div class="cand" style="border-color:#28402f"><b>Deterministic eval</b> <span class="tag">module 1 · material safety (1-ply)</span>
+      <div class="traj">${dl}</div><div class="traj muted">${cand}</div></div>`;
+  }
   // sandbox lines (the established move trees) -- click to step through on the board
   const lines=(t.sandbox&&t.sandbox.lines)||[];
   LASTLINES=lines; LASTREJ=(t.rejected||[]); LASTFENB=t.fen_before; LASTENGINE=t.sandbox_engine||'stockfish';

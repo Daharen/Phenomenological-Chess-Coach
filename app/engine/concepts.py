@@ -36,28 +36,47 @@ def _lva_square(board: chess.Board, target: int, color: chess.Color) -> int | No
     return best_sq
 
 
+def _see_defense(b: chess.Board, target: int, side: chess.Color) -> int:
+    """Material the `side` to move can WIN by (optionally) recapturing on
+    `target`, with least-valuable-attacker play.  A recapture is only made when
+    it gains material, so this is clamped at >= 0 (the defender can stand pat).
+    Mutates `b` in place down the single capture chain (no branching)."""
+    sq = _lva_square(b, target, side)
+    if sq is None:
+        return 0
+    victim = b.piece_at(target)
+    if victim is None:
+        return 0
+    victim_val = VALUES[victim.piece_type]
+    attacker = b.piece_at(sq)
+    b.remove_piece_at(sq)
+    b.set_piece_at(target, attacker)  # occupy target (opens x-rays for the reply)
+    return max(0, victim_val - _see_defense(b, target, not side))
+
+
 def see(board: chess.Board, target: int, capturing_side: chess.Color) -> int:
     """Static exchange evaluation: net material for `capturing_side` if it
-    initiates captures on `target` and both sides recapture with the least
-    valuable attacker.  X-rays are handled by mutating a board copy."""
+    initiates captures on `target`, both sides recapturing with the least
+    valuable attacker.  X-rays are handled by mutating a board copy.
+
+    The INITIATING capture is forced (this reports the true value of playing it,
+    so a losing capture / sacrifice reads negative); every later RECAPTURE is
+    optional (the recapturing side stands pat when a recapture would lose), which
+    is the standard swap semantics.  A previous iterative fold here folded in one
+    phantom recapture too many, undervaluing every undefended capture (it scored
+    winning a free pawn with a knight as -220); this recursive form is exact."""
     victim = board.piece_at(target)
     if victim is None:
         return 0
     b = board.copy(stack=False)
-    gain = [VALUES[victim.piece_type]]
-    side = capturing_side
-    while True:
-        sq = _lva_square(b, target, side)
-        if sq is None:
-            break
-        piece = b.piece_at(sq)
-        gain.append(VALUES[piece.piece_type] - gain[-1])
-        b.remove_piece_at(sq)
-        b.set_piece_at(target, piece)  # occupy target (opens x-rays)
-        side = not side
-    for i in range(len(gain) - 1, 0, -1):
-        gain[i - 1] = -max(-gain[i - 1], gain[i])
-    return gain[0]
+    sq = _lva_square(b, target, capturing_side)
+    if sq is None:
+        return 0
+    victim_val = VALUES[victim.piece_type]
+    attacker = b.piece_at(sq)
+    b.remove_piece_at(sq)
+    b.set_piece_at(target, attacker)
+    return victim_val - _see_defense(b, target, not capturing_side)
 
 
 # --------------------------------------------------------------------------- #

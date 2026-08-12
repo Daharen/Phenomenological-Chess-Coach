@@ -111,6 +111,11 @@ DEFAULTS: dict[str, Any] = {
     #   autonomous -> the LLM itself picks; Stockfish only checks legality
     "selection_mode": "guided",
 
+    # Deterministic evaluator (runs after selection). Module 1 = material safety:
+    # veto a chosen move that hangs >= hang_threshold_cp of material that a safe
+    # sibling candidate would keep (guided/assist), or warn (autonomous).
+    "deteval": {"enabled": True, "hang_threshold_cp": 100, "veto_in_autonomous": False},
+
     "server": {
         "host": "127.0.0.1",
         "port": 7801,

@@ -59,6 +59,8 @@
 
   "selection_mode": "guided",
 
+  "deteval": {"enabled": true, "hang_threshold_cp": 100, "veto_in_autonomous": false},
+
   "server": {
     "host": "127.0.0.1",
     "port": 7801,

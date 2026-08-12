@@ -222,6 +222,7 @@ class ChessCoach:
             "chosen": {**cand, "rationale": prop["rationale"]},
             "viable": [cand], "rejected": [], "illegal_attempts": [],
             "sandbox": {"engine": sb_engine, "lines": [], "ranking": [], "best_uci": forced.uci()},
+            "deteval": None,
             "concepts": concepts, "manifest": self.memory.manifest.to_dict(),
             "audit": None, "our_eval_cp": our_eval, "crisis_triggered": crisis, "level": self.level,
         }
@@ -380,6 +381,34 @@ class ChessCoach:
         chosen_v = next((v for v in viable if v["uci"] == chosen_uci), viable[0])
         chosen_move = chess.Move.from_uci(chosen_uci)
 
+        # ---- Deterministic evaluator, module 1: material safety --------------
+        # Runs AFTER selection. If the chosen move hangs material that one of the
+        # player's OWN other candidates would keep, veto it (guided/assist) or warn
+        # (autonomous). Deterministic, 1-ply, not Stockfish.
+        deteval = None
+        dcfg = cfg.raw.get("deteval", {})
+        if dcfg.get("enabled", True) and viable:
+            from ..engine.deteval import assess_candidates
+            deteval = assess_candidates(board, [v["uci"] for v in viable], chosen_uci,
+                                        dcfg.get("hang_threshold_cp", 100))
+            netmap = {c["uci"]: c["net_cp"] for c in deteval["per_candidate"]}
+            for v in viable:
+                if v["uci"] in netmap:
+                    v["safety_cp"] = netmap[v["uci"]]
+            if deteval["hangs"]:
+                veto = mode in ("guided", "assist") or (
+                    mode == "autonomous" and dcfg.get("veto_in_autonomous", False))
+                if veto:
+                    chosen_uci = deteval["safe_alt"]
+                    chosen_v = next(v for v in viable if v["uci"] == chosen_uci)
+                    chosen_move = chess.Move.from_uci(chosen_uci)
+                    deteval["action"] = "re-picked"
+                    selection_by = f"{selection_by} → safety veto (module 1)"
+                else:
+                    deteval["action"] = "warned"   # autonomous: respect the LLM's pick
+            else:
+                deteval["action"] = "ok"
+
         # blind-spot audit before committing
         audit = self.orch.audit_blind_spot(board, chosen_move, movetime=deep_mt)
 
@@ -415,6 +444,7 @@ class ChessCoach:
             "rejected": rejected,
             "illegal_attempts": illegal_attempts,
             "sandbox": sandbox,
+            "deteval": deteval,
             "concepts": concepts,
             "manifest": self.memory.manifest.to_dict(),
             "audit": audit,
