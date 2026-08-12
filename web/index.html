@@ -124,6 +124,12 @@
       <button id="flip">Flip</button>
       <button id="undo" title="take back last full move">Undo</button>
     </div>
+    <div id="reviewbar" style="display:none;align-items:center;gap:8px;margin-top:8px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 10px;max-width:520px">
+      <button id="rvprev" title="previous ply (Left arrow)">◀</button>
+      <button id="rvnext" title="next ply (Right arrow)">▶</button>
+      <span id="reviewinfo" class="tag" style="flex:1"></span>
+      <button id="rvexit" title="exit review (Esc)">Exit ✕</button>
+    </div>
   </div>
 
   <div class="panels">
@@ -163,6 +169,7 @@
 <script>
 const PIECES={K:'♔',Q:'♕',R:'♖',B:'♗',N:'♘',P:'♙',k:'♚',q:'♛',r:'♜',b:'♝',n:'♞',p:'♟'};
 let ST=null, SEL=null, FLIP=false, GLOSS={}, BUSY=false, LASTMV=null;
+let REVIEW=null, LASTLINES=[], LASTREJ=[], LASTFENB=null, LASTENGINE='stockfish';
 
 const $=s=>document.querySelector(s);
 const api=async(u,m,b)=>{const r=await fetch(u,{method:m||'GET',headers:{'Content-Type':'application/json'},
@@ -176,11 +183,12 @@ function fenToGrid(fen){
   return g; // g[0]=rank8
 }
 function sqName(file,rank){return 'abcdefgh'[file]+(rank+1);}
+function curFen(){return REVIEW?REVIEW.seq[REVIEW.idx].fen:(ST?ST.fen:null);}
 
 function drawBoard(){
   const board=$('#board');board.innerHTML='';
-  if(!ST)return;
-  const g=fenToGrid(ST.fen);
+  const fen=curFen(); if(!fen)return;
+  const g=fenToGrid(fen);
   const ranks=[...Array(8).keys()];const files=[...Array(8).keys()];
   const rOrder=FLIP?ranks:ranks.slice().reverse();     // top->bottom
   const fOrder=FLIP?files.slice().reverse():files;
@@ -194,7 +202,8 @@ function drawBoard(){
       if(piece){const w=document.createElement('span');
         w.className='pc '+(piece===piece.toUpperCase()?'w':'b');
         w.textContent=PIECES[piece];d.appendChild(w);}
-      if(LASTMV&&(name===LASTMV.slice(0,2)||name===LASTMV.slice(2,4)))d.classList.add('lastmv');
+      const hi=REVIEW?((REVIEW.seq[REVIEW.idx]||{}).uci):LASTMV;
+      if(hi&&(name===hi.slice(0,2)||name===hi.slice(2,4)))d.classList.add('lastmv');
       // coordinates
       if(f===(FLIP?7:0)){const c=document.createElement('span');c.className='co r';c.textContent=r+1;d.appendChild(c);}
       if(r===(FLIP?7:0)){const c=document.createElement('span');c.className='co f';c.textContent='abcdefgh'[f];d.appendChild(c);}
@@ -204,6 +213,7 @@ function drawBoard(){
   }
 }
 async function onSquare(name){
+  if(REVIEW){return;}   // board is in line-review mode; use the review bar
   if(BUSY||!ST||ST.is_game_over)return;
   if(ST.turn!==humanColor()){flash('Not your turn.','warn');return;}
   const g=fenToGrid(ST.fen);
@@ -253,6 +263,7 @@ async function highlight(name){
       if(g[7-rr][f])s.classList.add('cap');s.appendChild(dot);}}
 }
 async function doHuman(uci){
+  if(REVIEW)exitReview();
   BUSY=true;flash('');
   const r=await api('/api/human_move','POST',{uci});
   if(!r.ok){flash(r.error||'illegal','warn');BUSY=false;return;}
@@ -264,6 +275,7 @@ async function doHuman(uci){
 }
 async function engineMove(){
   if(BUSY||!ST||ST.is_game_over)return;
+  if(REVIEW)exitReview();
   BUSY=true;
   const calc=$('#calc').value;
   flash((calc==='llm'?'LLM is calculating ~27 moves 5-deep (this is slow) ':'Engine is thinking ')+'<span class="spin"></span>');
@@ -332,19 +344,33 @@ function renderTurn(t){
     <div class="traj">${escape(t.chosen.rationale||'')}</div></div>`;
   if(t.autonomous_pick&&t.autonomous_pick.reasoning)
     html+=`<div class="traj rt" style="margin:-2px 0 6px">LLM's choice: ${escape(t.autonomous_pick.reasoning)}</div>`;
-  // sandbox lines (the established move trees)
+  // sandbox lines (the established move trees) -- click to step through on the board
   const lines=(t.sandbox&&t.sandbox.lines)||[];
-  for(const ln of lines){
+  LASTLINES=lines; LASTREJ=(t.rejected||[]); LASTFENB=t.fen_before; LASTENGINE=t.sandbox_engine||'stockfish';
+  const isLLM=t.sandbox_engine==='llm';
+  const ourMoves=(t.sandbox&&t.sandbox.our_moves)||5;
+  if(lines.length)
+    html+=`<div class="traj muted" style="margin-bottom:4px">${isLLM
+      ? 'Ranking = final (turn-'+ourMoves+') material only — a line can peak early then blunder at the end. '
+      : ''}Click a line to step through it on the board (◀ ▶ / Esc).</div>`;
+  for(let i=0;i<lines.length;i++){
+    const ln=lines[i];
     const chosen=ln.seed_uci===t.chosen.uci;
-    const traj=ln.steps.map(s=>`<span class="mono">${s.san}</span><span class="muted">(${s.eval_cp},d${s.depth_used})</span>`).join(' ');
-    html+=`<div class="cand ${chosen?'chosen':''}"><b>${ln.seed_san}</b> ${srcBadge(ln.seed_uci)} ${ln.collapsed?'<span class="pill blunder">collapse@'+ln.collapse_ply+'</span>':''}
+    const evals=ln.steps.map(s=>s.eval_cp).filter(x=>x!=null);
+    const leaf=ln.final_cp!=null?ln.final_cp:(evals.length?evals[evals.length-1]:0);
+    const low=evals.length?Math.min(...evals):0;
+    const our=ln.our_reached!=null?ln.our_reached:ln.steps.filter(s=>s.mover).length;
+    const traj=ln.steps.map(s=>`<span class="mono">${s.san}</span><span class="muted">(${s.eval_cp})</span>`).join(' ');
+    const summ=isLLM?`<span class="muted"> · reached ${our}/${ourMoves} of our moves · leaf ${leaf} · low ${low}${ln.complete===false?' · cut short':''}</span>`:'';
+    html+=`<div class="cand ${chosen?'chosen':''}" style="cursor:pointer" title="click to step through this line" onclick="enterReviewIdx(${i})"><b>${ln.seed_san}</b> ${srcBadge(ln.seed_uci)} ${ln.collapsed?'<span class="pill blunder">collapse@'+ln.collapse_ply+'</span>':''}${summ} <span class="muted" style="float:right">step ▸</span>
       <div class="traj">${traj||'<span class="muted">—</span>'}</div></div>`;
   }
-  // rejected (guided vetoes)
-  for(const r of (t.rejected||[])){
-    const rc=r.classification;
+  // rejected (guided vetoes) -- also steppable
+  for(let i=0;i<(t.rejected||[]).length;i++){
+    const r=t.rejected[i]; const rc=r.classification;
     const cons=(r.consequence&&r.consequence.trajectory||[]).map(s=>s.san).join(' ');
-    html+=`<div class="cand rej"><b>Vetoed ✕ ${r.san}</b> ${srcBadge(r.uci)} <span class="pill ${rc.label}">${rc.label}</span>
+    const clickable=!!(r.consequence&&r.consequence.trajectory&&r.consequence.trajectory.length);
+    html+=`<div class="cand rej"${clickable?' style="cursor:pointer" title="click to step through the refutation" onclick="enterRejIdx('+i+')"':''}><b>Vetoed ✕ ${r.san}</b> ${srcBadge(r.uci)} <span class="pill ${rc.label}">${rc.label}</span>${clickable?' <span class="muted" style="float:right">step ▸</span>':''}
       <div class="traj">${escape(r.reason)}${cons?(' — <span class="mono">'+cons+'</span>'):''}</div></div>`;
   }
   if(t.illegal_attempts&&t.illegal_attempts.length)
@@ -385,7 +411,28 @@ function showTip(e,t){const tip=$('#tip');const g=GLOSS[t.term];
 function hideTip(){$('#tip').style.display='none';}
 function escape(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
 
+// ---- line review (step through a calculated line on the board) ----
+function enterReview(steps, label, startFen, evalUnit){
+  const seq=[{san:'(start position)', fen:startFen, uci:null, eval_cp:null}];
+  for(const s of (steps||[])) seq.push({san:s.san, fen:s.fen, uci:s.uci||null,
+    eval_cp:(s.eval_cp!=null?s.eval_cp:null)});
+  REVIEW={seq, idx:0, label, evalUnit:evalUnit||'eval'};
+  $('#reviewbar').style.display='flex';
+  drawBoard(); updateReviewBar();
+}
+function enterReviewIdx(i){ const ln=LASTLINES[i]; if(!ln)return;
+  enterReview(ln.steps, ln.seed_san+' line', LASTFENB, LASTENGINE==='llm'?'material':'eval'); }
+function enterRejIdx(i){ const r=LASTREJ[i]; if(!r||!r.consequence)return;
+  enterReview(r.consequence.trajectory, 'Refutation of '+r.san, r.consequence.start_fen||LASTFENB, 'eval'); }
+function updateReviewBar(){ if(!REVIEW)return; const s=REVIEW.seq[REVIEW.idx];
+  const ev=(s.eval_cp!=null)?(' · '+(REVIEW.evalUnit==='material'?'material ':'eval ')+(s.eval_cp>=0?'+':'')+s.eval_cp):'';
+  $('#reviewinfo').innerHTML=`<b>${escape(REVIEW.label)}</b> — ply ${REVIEW.idx}/${REVIEW.seq.length-1}: <span class="mono">${escape(s.san)}</span>${ev}`; }
+function reviewStep(d){ if(!REVIEW)return;
+  REVIEW.idx=Math.max(0,Math.min(REVIEW.seq.length-1,REVIEW.idx+d)); drawBoard(); updateReviewBar(); }
+function exitReview(){ REVIEW=null; const rb=$('#reviewbar'); if(rb)rb.style.display='none'; drawBoard(); }
+
 async function newGame(){
+  if(REVIEW)exitReview();
   const color=$('#color').value, level=$('#level').value;
   flash('Starting <span class="spin"></span>');
   ST=await api('/api/new','POST',{human_color:color,level});
@@ -415,6 +462,13 @@ async function undo(){
   $('#flip').onclick=()=>{FLIP=!FLIP;drawBoard();};
   $('#undo').onclick=undo;
   $('#provider').onchange=setProvider;
+  $('#rvprev').onclick=()=>reviewStep(-1);
+  $('#rvnext').onclick=()=>reviewStep(1);
+  $('#rvexit').onclick=exitReview;
+  document.addEventListener('keydown',e=>{ if(!REVIEW)return;
+    if(e.key==='ArrowLeft'){reviewStep(-1);e.preventDefault();}
+    else if(e.key==='ArrowRight'){reviewStep(1);e.preventDefault();}
+    else if(e.key==='Escape'){exitReview();} });
   await newGame();
 })();
 </script>
