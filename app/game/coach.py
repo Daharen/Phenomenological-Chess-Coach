@@ -105,22 +105,23 @@ class ChessCoach:
                 "concepts": concepts, "state": self.state()}
 
     # -- LLM-calculated sandbox (optional variant) -----------------------------
-    def _llm_move_at(self, board: chess.Board, note: str, budget: list[int]):
-        """One legal move from the LLM for the side to move, with trial-based
-        illegal retry. `budget` is a 1-element list (remaining calls) mutated in
-        place. Returns (Proposal|None, [illegal raw...])."""
-        cap = self.cfg.sandbox.get("max_establish_attempts", 64)
-        no_prog_cap = self.cfg.sandbox.get("no_progress_cap", 8)
+    def _llm_move_at(self, board: chess.Board, note: str):
+        """One legal move from the LLM for the side to move. Each call is a FRESH,
+        context-purged instantiation with its OWN retry allowance -- local inference
+        is free, so there is NO accumulative budget across the turn. Bounded only by
+        a per-node cap and the no-progress guard (both converge on the finite legal
+        set). Returns (Proposal|None, [illegal raw...], attempts)."""
+        cap = self.cfg.sandbox.get("max_establish_attempts", 24)
+        no_prog_cap = self.cfg.sandbox.get("no_progress_cap", 6)
         tried: list[str] = []
         seen: set[str] = set()
         attempts = 0
         stagnant = 0
-        while attempts < cap and budget[0] > 0:
+        while attempts < cap:
             attempts += 1
-            budget[0] -= 1
             prop = self.player.propose_one(board, note, tried, None)
             if prop.move is not None and prop.move in board.legal_moves:
-                return prop, tried
+                return prop, tried, attempts
             raw = (prop.raw or "").strip() or "?"
             if raw not in seen:
                 seen.add(raw)
@@ -130,22 +131,24 @@ class ChessCoach:
                 stagnant += 1
                 if stagnant >= no_prog_cap:
                     break
-        return None, tried
+        return None, tried, attempts
 
     def _llm_sandbox(self, board: chess.Board, root_ucis: list[str], note: str) -> dict:
         """For each root candidate, the LLM plays a line `our_moves` of OUR moves
         deep (interleaving the opponent's best-estimate replies), every move legal.
-        The leaf is scored by deterministic net material. Roots are ranked by leaf."""
+        Every ply is a fresh instantiation with its own retry allowance (no shared
+        budget). The leaf is scored by deterministic net material; roots ranked by it."""
         our_moves = self.cfg.sandbox.get("our_moves", 5)
         collapse_cp = self.cfg.sandbox.get("collapse_cp", -300)
-        budget = [self.cfg.sandbox.get("llm_calc_budget", 60)]
         root_mover = board.turn
         lines = []
+        total_calls = 0
         for root in root_ucis:
             b = board.copy()
             mv0 = chess.Move.from_uci(root)
             steps = []
             illegal_here: list[str] = []
+            line_calls = 0
             san0 = b.san(mv0)
             b.push(mv0)
             steps.append({"ply": 1, "san": san0, "uci": root, "mover": True,
@@ -155,13 +158,15 @@ class ChessCoach:
             collapse_ply = None
             our_count = 1
             ply = 1
-            while our_count < our_moves and not b.is_game_over() and budget[0] > 0:
+            while our_count < our_moves and not b.is_game_over():
                 ply += 1
                 is_our = (b.turn == root_mover)
-                prop, tried = self._llm_move_at(b, note if is_our else "", budget)
+                prop, tried, used = self._llm_move_at(b, note if is_our else "")
+                line_calls += used
+                total_calls += used
                 illegal_here += tried
                 if prop is None:
-                    break
+                    break                       # this node couldn't find a legal move; end line
                 san = b.san(prop.move)
                 b.push(prop.move)
                 cp = material_cp(b, root_mover)
@@ -173,19 +178,59 @@ class ChessCoach:
                 if is_our:
                     our_count += 1
             leaf = material_cp(b, root_mover)
+            our_reached = sum(1 for s in steps if s["mover"])
             lines.append({
                 "seed_uci": root, "seed_san": san0, "steps": steps,
                 "collapsed": collapsed, "collapse_ply": collapse_ply,
                 "collapse_reason": (f"material fell to {leaf}cp" if collapsed else None),
                 "final_cp": leaf, "score": float(leaf), "illegal": illegal_here,
+                "our_reached": our_reached, "complete": our_reached >= our_moves,
+                "calls": line_calls,
             })
         lines.sort(key=lambda ln: ln["score"], reverse=True)
         return {
             "engine": "llm", "our_moves": our_moves,
             "lines": lines, "best_uci": (lines[0]["seed_uci"] if lines else None),
             "ranking": [(ln["seed_san"], round(ln["score"], 1), ln["collapsed"]) for ln in lines],
-            "calls_used": self.cfg.sandbox.get("llm_calc_budget", 60) - budget[0],
+            "calls_used": total_calls,
         }
+
+    def _forced_move_turn(self, mode: str, sb_engine: str) -> dict:
+        """The position has exactly one legal move: play it, no LLM, no selection."""
+        board = self.board
+        cfg = self.cfg
+        class_depth = cfg.classification["class_depth"]
+        forced = next(iter(board.legal_moves))
+        cls = classify_move(self.pool, board, forced, cfg.classification, depth=class_depth)
+        board_before = board.copy()
+        san = board.san(forced)
+        board.push(forced)
+        concepts = detect_concepts(board, forced, board_before)
+        our_eval = self.pool.eval_cp(board, depth=class_depth, pov=self.engine_color)
+        crisis = self.memory.note_eval(our_eval)
+        self.memory.recover_if_stable(our_eval)
+        self.orch.update_after_move(board, forced, cls, our_eval)
+        prop = {"uci": forced.uci(), "san": san, "source": "forced",
+                "rationale": "Forced -- the only legal move."}
+        cand = {"uci": forced.uci(), "san": san, "proposal": prop,
+                "classification": cls.to_dict(), "beyond_horizon": False, "horizon": None}
+        rec = {
+            "fen_before": board_before.fen(), "mode": mode, "sandbox_engine": sb_engine,
+            "established": [cand], "established_source": "forced", "established_count": 1,
+            "establish_attempts": 0, "target": 1, "num_legal": 1,
+            "selection_by": "forced (only legal move)", "autonomous_pick": None,
+            "chosen": {**cand, "rationale": prop["rationale"]},
+            "viable": [cand], "rejected": [], "illegal_attempts": [],
+            "sandbox": {"engine": sb_engine, "lines": [], "ranking": [], "best_uci": forced.uci()},
+            "concepts": concepts, "manifest": self.memory.manifest.to_dict(),
+            "audit": None, "our_eval_cp": our_eval, "crisis_triggered": crisis, "level": self.level,
+        }
+        rec["coaching"] = self.evaluator.coach(rec)
+        self.memory.log_turn({"move": san, "uci": forced.uci(), "eval_cp": our_eval,
+                              "label": cls.label, "mode": mode, "established": 1,
+                              "source": "forced", "n_rejected": 0, "n_illegal": 0, "crisis": crisis})
+        self.memory.persist()
+        return {"ok": True, "turn": rec, "state": self.state()}
 
     # -- the engine's phenomenological turn ------------------------------------
     def engine_move(self, mode: str | None = None, sandbox_engine: str | None = None) -> dict:
@@ -197,15 +242,22 @@ class ChessCoach:
         deep_mt = lvl.get("deep_movetime", 1.5)
         class_depth = cfg.classification["class_depth"]
         K = cfg.sandbox.get("candidate_k", 3)
-        max_attempts = cfg.sandbox.get("max_establish_attempts", 64)
+        max_attempts = cfg.sandbox.get("max_establish_attempts", 24)
         mode = (mode or cfg.raw.get("selection_mode", "guided")).lower()
         if mode not in ("guided", "assist", "autonomous"):
             mode = "guided"
+        sb_engine = (sandbox_engine or cfg.sandbox.get("engine", "stockfish")).lower()
 
         note = self.orch.minimal_note(board)      # one short line; NOT the manifest
         num_legal = board.legal_moves.count()
-        target = min(K, num_legal)
+        target = min(K, num_legal)                # relax the 3-candidate rule when < 3 exist
         llm = self.client.available
+
+        # Forced move: exactly one legal move -> play it directly. Skips the LLM
+        # establishment loop (which otherwise flails in check/forced positions) and
+        # any Stockfish selection -- its strength cannot contribute with no choice.
+        if num_legal == 1:
+            return self._forced_move_turn(mode, sb_engine)
 
         # ---- Establishment: the player builds its OWN slate of >=target legal
         #      moves, ONE move at a time, from a minimal context. Illegal tries
@@ -300,7 +352,6 @@ class ChessCoach:
         # sandbox the viable set -- trees for display, and the ranking that
         # guided/assist select from. Engine: Stockfish (fast, default) or the
         # LLM-calculated variant (the model plays each line out, ~27+ calls).
-        sb_engine = (sandbox_engine or cfg.sandbox.get("engine", "stockfish")).lower()
         if sb_engine == "llm" and llm:
             sandbox = self._llm_sandbox(board, [v["uci"] for v in viable], note)
         else:

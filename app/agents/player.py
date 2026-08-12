@@ -69,6 +69,8 @@ class OneOffPlayer:
             f"FEN: {board.fen()}",
             f"You are playing {'White' if board.turn else 'Black'}; it is your move.",
         ]
+        if board.is_check():
+            parts.append("You are in CHECK -- your move MUST get your king out of check.")
         if note:
             parts.append(f"General plan (a hint only): {note}")
         if ruled_out:

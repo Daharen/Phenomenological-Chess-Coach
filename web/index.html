@@ -307,8 +307,9 @@ function renderTurn(t){
   const srcOf={};
   for(const e of (t.established||[]))srcOf[e.uci]=(e.proposal&&e.proposal.source)||'?';
   const srcBadge=u=>{const s=srcOf[u]; if(!s)return '';
-    return s==='llm'?'<span class="pill best" title="the LLM proposed this move">LLM</span>'
-      :'<span class="pill inaccuracy" title="Stockfish candidate (no LLM)">SF</span>';};
+    if(s==='llm')return '<span class="pill best" title="the LLM proposed this move">LLM</span>';
+    if(s==='forced')return '<span class="pill" title="the only legal move">forced</span>';
+    return '<span class="pill inaccuracy" title="Stockfish candidate (no LLM)">SF</span>';};
   const modeName={guided:'Guided',assist:'Assist',autonomous:'Autonomous'}[t.mode]||t.mode;
   let html='';
   if(t.crisis_triggered)html+='<div class="pill crisis" style="margin-bottom:6px">⚠ Blunder Protocol — switched to crisis management</div>';
