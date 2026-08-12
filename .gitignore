@@ -9,18 +9,15 @@ venv/
 config/local.json
 *.key
 
-# OS
+# OS / shortcuts / scratch
 .DS_Store
 Thumbs.db
+*.lnk
+*.tmp
+COMMIT_MSG*
 
 # The F: data directory lives outside this tree; never commit game data
 runs/
 logs/
 cache/
 games/
-
-*.lnk
-
-*.tmp
-
-COMMIT_MSG*

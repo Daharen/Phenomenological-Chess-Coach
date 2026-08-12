@@ -138,6 +138,11 @@ class LocalClient(LLMClient):
             ],
             "temperature": temperature,
             "max_tokens": max_tokens,
+            # Qwen3.x are reasoning models: their <think> trace goes to a separate
+            # field and burns the token budget, often leaving `content` empty.
+            # Disable thinking so the answer lands in `content`. Needs the server
+            # launched with --jinja; ignored harmlessly otherwise.
+            "chat_template_kwargs": {"enable_thinking": False},
         }
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
@@ -149,7 +154,13 @@ class LocalClient(LLMClient):
                                   timeout=self.timeout)
                 r.raise_for_status()
                 data = r.json()
-                return data["choices"][0]["message"]["content"]
+                msg = data["choices"][0]["message"]
+                content = msg.get("content")
+                if not content:  # fall back to reasoning field if content is empty
+                    content = msg.get("reasoning_content") or ""
+                # strip any <think>...</think> that leaked into content
+                content = re.sub(r"<think>.*?</think>", "", content, flags=re.S).strip()
+                return content or None
             except (requests.RequestException, KeyError, ValueError):
                 if attempt >= self.max_retries:
                     return None

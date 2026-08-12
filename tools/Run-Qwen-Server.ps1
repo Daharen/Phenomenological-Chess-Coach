@@ -2,6 +2,10 @@
 # 127.0.0.1:8080 (OpenAI-compatible), the "Local 9B" brain for the Chess Coach.
 # Uses the newer llama.cpp build (b10092): the older build 8661 cannot load
 # Qwen3.5's hybrid SSM architecture ("missing tensor blk.NN.ssm_conv1d.weight").
+#   --jinja      : required so the app can disable Qwen's <think> reasoning
+#                  (chat_template_kwargs.enable_thinking=false) -- otherwise the
+#                  model spends its tokens "thinking" and returns empty content.
+#   --parallel 1 : give each request the full 8192-token context (no slot split).
 # Restarts on crash, but STOPS after 3 fast failures instead of looping.
 $ErrorActionPreference = 'Continue'
 $Llama = 'F:\My_Programs\LifeOrchestrator-Refresh_Large_Data\_engines\llama.cpp-b10092\bin\llama-server.exe'
@@ -14,7 +18,7 @@ while ($true) {
   Write-Host ''
   Write-Host ("[{0}] Starting Qwen3.5 9B on http://{1}:{2}  (all layers on GPU)" -f (Get-Date -Format 'HH:mm:ss'), $Bind, $Port) -ForegroundColor Cyan
   $sw = [System.Diagnostics.Stopwatch]::StartNew()
-  & $Llama --model $Model --host $Bind --port $Port --n-gpu-layers $Ngl --ctx-size $Ctx --alias qwen3.5-9b
+  & $Llama --model $Model --host $Bind --port $Port --n-gpu-layers $Ngl --ctx-size $Ctx --parallel 1 --jinja --alias qwen3.5-9b
   $code = $LASTEXITCODE; $sw.Stop(); $secs = [int]$sw.Elapsed.TotalSeconds
   Write-Host ("[{0}] llama-server exited (code {1}) after {2}s." -f (Get-Date -Format 'HH:mm:ss'), $code, $secs) -ForegroundColor Yellow
   if ($secs -lt 30) {
