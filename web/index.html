@@ -109,6 +109,7 @@
     </select>
   </label>
   <button id="new" class="primary">New game</button>
+  <button id="copyjson" title="Copy this turn's full value spread + position as JSON for troubleshooting">Copy JSON</button>
 </header>
 
 <div class="wrap">
@@ -170,6 +171,7 @@
 const PIECES={K:'♔',Q:'♕',R:'♖',B:'♗',N:'♘',P:'♙',k:'♚',q:'♛',r:'♜',b:'♝',n:'♞',p:'♟'};
 let ST=null, SEL=null, FLIP=false, GLOSS={}, BUSY=false, LASTMV=null;
 let REVIEW=null, LASTLINES=[], LASTREJ=[], LASTFENB=null, LASTENGINE='stockfish';
+let LASTTURN=null;
 
 const $=s=>document.querySelector(s);
 const api=async(u,m,b)=>{const r=await fetch(u,{method:m||'GET',headers:{'Content-Type':'application/json'},
@@ -282,6 +284,7 @@ async function engineMove(){
   const r=await api('/api/engine_move','POST',{mode:$('#mode').value, sandbox_engine:calc});
   if(!r.ok){flash(r.error||'error','warn');BUSY=false;return;}
   ST=r.state;LASTMV=r.turn.chosen.uci;drawBoard();renderState();renderTurn(r.turn);
+  LASTTURN=r.turn;
   flash(`Engine played <b>${r.turn.chosen.san}</b>`);
   BUSY=false;
 }
@@ -365,6 +368,22 @@ function renderTurn(t){
     const cand=(d.per_candidate||[]).map(c=>`<span class="mono">${c.san}</span> <span class="muted">${c.threat_cp>0?('allows '+c.threat_cp+'cp'):'safe'}</span>`).join(' &nbsp;·&nbsp; ');
     html+=`<div class="cand" style="border-color:#3a2c40"><b>Deterministic eval</b> <span class="tag">module 2 · fork / double-attack (2-ply)</span>
       <div class="traj">${dl}</div><div class="traj muted">${cand}</div></div>`;
+  }
+  // appeal step (module 3): confront-and-agree / re-pick
+  if(t.appeal&&t.appeal.rounds&&t.appeal.rounds.length){
+    const a=t.appeal;
+    const head=a.changed
+      ? `<span class="pill best">appeal re-picked</span> the agent agreed with the flag; a different candidate was selected.`
+      : `<span class="pill mistake">move upheld</span> the agent defended its choice against the flag.`;
+    const rows=a.rounds.map(r=>{
+      let v;
+      if(r.outcome==='defended') v=`<span class="pill best">defended</span> ${escape(r.plan||'(no plan given)')}`;
+      else if((r.outcome||'').indexOf('no alternative')>=0) v=`<span class="pill mistake">conceded — no safe alternative left</span>`;
+      else v=`<span class="pill blunder">agreed it's bad</span> banned, re-picking`;
+      return `<div class="traj"><span class="mono">${escape(r.san||r.move||'')}</span> flagged: ${escape(r.reason||'')} → ${v}</div>`;
+    }).join('');
+    html+=`<div class="cand" style="border-color:#3a3420"><b>Appeal</b> <span class="tag">module 3 · agree / re-pick</span>
+      <div class="traj">${head}</div>${rows}</div>`;
   }
   // sandbox lines (the established move trees) -- click to step through on the board
   const lines=(t.sandbox&&t.sandbox.lines)||[];
@@ -474,11 +493,33 @@ async function undo(){
   flash('Undo not wired to server history in this build — start a new game to reset.','warn');
 }
 
+async function copyJSON(){
+  if(!LASTTURN){flash('No engine turn yet — press \u201CEngine move\u201D first.','warn');return;}
+  const bundle={
+    exported_at:new Date().toISOString(),
+    fen_before:LASTTURN.fen_before||null,
+    fen_after:(ST&&ST.fen)||null,
+    mode:LASTTURN.mode, sandbox_engine:LASTTURN.sandbox_engine,
+    selection_by:LASTTURN.selection_by, our_eval_cp:LASTTURN.our_eval_cp,
+    manifest:(ST&&ST.manifest)||LASTTURN.manifest||null,
+    turn:LASTTURN
+  };
+  const txt=JSON.stringify(bundle,null,2);
+  try{ await navigator.clipboard.writeText(txt); flash('Turn JSON copied to clipboard ('+txt.length+' chars).'); }
+  catch(e){
+    const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();
+    try{document.execCommand('copy');flash('Turn JSON copied to clipboard.');}
+    catch(_){flash('Copy failed — JSON logged to console.','warn');console.log(txt);}
+    document.body.removeChild(ta);
+  }
+}
+
 (async function init(){
   GLOSS=await api('/api/glossary');
   const h=await api('/api/health');
   $('#hp').textContent=h.provider+' · '+(h.stockfish?'sf ok':'no sf')+' · '+h.glossary_terms+' terms';
   $('#new').onclick=newGame;
+  $('#copyjson').onclick=copyJSON;
   $('#engine').onclick=engineMove;
   $('#analyze').onclick=analyze;
   $('#flip').onclick=()=>{FLIP=!FLIP;drawBoard();};

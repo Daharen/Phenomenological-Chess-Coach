@@ -63,6 +63,8 @@
 
   "threats": {"enabled": true, "warn_threshold_cp": 150, "veto": false, "veto_in_autonomous": false},
 
+  "appeal": {"enabled": true, "max_appeals": 2, "modes": ["autonomous"]},
+
   "server": {
     "host": "127.0.0.1",
     "port": 7801,

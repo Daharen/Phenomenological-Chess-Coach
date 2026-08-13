@@ -34,6 +34,12 @@ SYS_ONE = ("You are a chess player choosing ONE move from the position in front 
 SYS_CHOOSE = ("You are choosing which of YOUR OWN candidate moves to actually play, using "
               "your own judgment -- no engine help. Always answer in strict JSON.")
 
+SYS_APPEAL = ("You are reconsidering ONE move you were about to play, after a strict, purely "
+              "material safety check flagged it as losing material. Judge honestly from the "
+              "board. If the check is right that the move simply drops material for nothing, "
+              "AGREE. Only DISAGREE if you have a concrete tactical or positional compensation "
+              "(a real plan) that outweighs the material. Answer in strict JSON only.")
+
 
 class Proposal:
     def __init__(self, move: chess.Move | None, san: str | None, rationale: str,
@@ -116,6 +122,38 @@ class OneOffPlayer:
         if uci not in {c["uci"] for c in candidates}:
             return None
         return {"uci": uci, "reasoning": str(data.get("reasoning", "")).strip()}
+
+    # -- appeal: confront the player with a deterministic flag on its own pick --
+    def appeal(self, board: chess.Board, note: str, move_san: str, reason: str) -> dict:
+        """The evaluator flags the chosen move; give the SAME player ONE chance to
+        agree it is bad or to defend it with a concrete plan. Minimal context, one
+        reply. Returns {agree: bool, plan: str, raw: str}. Fail-soft default is to
+        AGREE (concede), so a dead model never forces a flagged move through."""
+        if not self.client.available:
+            return {"agree": True, "plan": "", "raw": ""}
+        parts = [
+            f"FEN: {board.fen()}",
+            f"You are playing {'White' if board.turn else 'Black'}; it is your move.",
+            f"The move you were about to play: {move_san}",
+            f"A deterministic safety check flags it -- {reason}.",
+        ]
+        if note:
+            parts.append(f"Your standing plan (a hint only): {note}")
+        parts.append(
+            "Do you AGREE this is a mistake you should not play? Only DISAGREE if you have a "
+            "concrete plan (a tactic or clear compensation) that is worth the material. "
+            'Respond as JSON: {"agree": true or false, "plan": "the concrete justifying plan, '
+            'or an empty string if you agree"}. Only output JSON.')
+        data = self.client.chat_json(SYS_APPEAL, "\n".join(parts), temperature=0.3, max_tokens=300)
+        if not data:
+            return {"agree": True, "plan": "", "raw": ""}
+        agree = data.get("agree", True)
+        if isinstance(agree, str):
+            agree = agree.strip().lower() in ("true", "yes", "agree", "1", "y")
+        plan = str(data.get("plan", "")).strip()
+        if not agree and not plan:          # a bare disagree with no plan is not a defense
+            agree = True
+        return {"agree": bool(agree), "plan": plan, "raw": str(data)[:500]}
 
     # -- Stockfish candidate slate (only when there is NO LLM) -----------------
     def stockfish_top(self, board: chess.Board, n: int = 3, class_depth: int = 12) -> list[chess.Move]:

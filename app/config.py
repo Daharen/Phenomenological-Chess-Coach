@@ -123,6 +123,13 @@ DEFAULTS: dict[str, Any] = {
     "threats": {"enabled": True, "warn_threshold_cp": 150, "veto": False,
                 "veto_in_autonomous": False},
 
+    # Appeal step (roadmap module 3): when a deterministic module only WARNS
+    # (typically autonomous mode), confront the player once. Agree -> the move
+    # joins a per-turn bad[] list and a fresh pick is made from the remaining
+    # slate; disagree WITH a concrete plan -> the move stands. Bounded by
+    # max_appeals. `modes` lists the selection modes the appeal runs in.
+    "appeal": {"enabled": True, "max_appeals": 2, "modes": ["autonomous"]},
+
     "server": {
         "host": "127.0.0.1",
         "port": 7801,

@@ -37,6 +37,7 @@ from ..agents.orchestrator import Orchestrator, _san_history
 from ..agents.player import OneOffPlayer
 from ..agents.evaluator import Evaluator
 from .memory import Memory
+from .appeal import run_appeal
 
 # Material values for the deterministic (non-Stockfish) leaf evaluation used by
 # the LLM-calculated sandbox. King excluded (never captured).
@@ -443,6 +444,77 @@ class ChessCoach:
             else:
                 threats["action"] = "ok"
 
+        # ---- Appeal step (roadmap module 3): confront the agent with the flag -
+        # When a deterministic module only WARNS (typically autonomous mode, where
+        # it does not hard-veto), give the player one chance to agree the move is
+        # bad (-> it joins a per-turn bad[] list and a fresh pick is made from the
+        # remaining slate) or to defend it with a concrete plan (-> the move stands).
+        # Bounded by appeal.max_appeals; modules re-run on each re-pick.
+        appeal = None
+        acfg = cfg.raw.get("appeal", {})
+        if (acfg.get("enabled", True) and llm
+                and mode in acfg.get("modes", ["autonomous"]) and len(viable) > 1):
+            from ..engine.deteval import assess_candidates as _assess_det
+            from ..engine.threats import assess_candidates as _assess_thr
+            _hang_thr = dcfg.get("hang_threshold_cp", 100)
+            _warn_thr = tcfg.get("warn_threshold_cp", 150)
+            _det_on = dcfg.get("enabled", True)
+            _thr_on = tcfg.get("enabled", True)
+
+            def _assess(chosen, slate):
+                d = _assess_det(board, slate, chosen, _hang_thr) if _det_on else None
+                t = _assess_thr(board, slate, chosen, _warn_thr) if _thr_on else None
+                reasons = []
+                if d and d["hangs"]:
+                    sent = next((c.get("sentence") for c in d["per_candidate"]
+                                 if c["uci"] == chosen and c.get("sentence")), None)
+                    reasons.append(sent or (f"it hangs material (net {d['chosen_net']}cp) "
+                                            f"that a safe move keeps (net {d['best_net']}cp)"))
+                if t and t["has_threat"] and t["avoidable"]:
+                    sent = (t.get("chosen_threat") or {}).get("sentence")
+                    reasons.append(sent or (f"it walks into a fork (~{t['chosen_cp']}cp) "
+                                            f"that a sibling avoids (~{t['safe_cp']}cp)"))
+                return {"reason": ("; ".join(reasons) if reasons else None),
+                        "deteval": d, "threats": t}
+
+            def _confront(chosen, reason):
+                san = board.san(chess.Move.from_uci(chosen))
+                return self.player.appeal(board, note, san, reason)
+
+            def _reselect(remaining):
+                rem = [v for v in viable if v["uci"] in set(remaining)]
+                if mode == "autonomous" and llm:
+                    pick = self.player.choose_among(board, note, rem)
+                    if pick and pick["uci"] in set(remaining):
+                        return pick["uci"]
+                scores = {ln["seed_uci"]: ln["score"] for ln in sandbox.get("lines", [])}
+                return max(rem, key=lambda v: scores.get(v["uci"], float("-inf")))["uci"]
+
+            ap = run_appeal(chosen_uci, [v["uci"] for v in viable],
+                            _assess, _confront, _reselect,
+                            max_appeals=acfg.get("max_appeals", 2))
+            for _rd in ap["rounds"]:
+                try:
+                    _rd["san"] = board.san(chess.Move.from_uci(_rd["move"]))
+                except Exception:
+                    _rd["san"] = _rd["move"]
+            appeal = {"changed": ap["changed"], "bad": ap["bad"], "rounds": ap["rounds"]}
+            if ap["changed"]:
+                chosen_uci = ap["chosen_uci"]
+                chosen_v = next(v for v in viable if v["uci"] == chosen_uci)
+                chosen_move = chess.Move.from_uci(chosen_uci)
+                autonomous_pick = None       # the LLM's original pick no longer stands
+                selection_by = f"{selection_by} \u2192 appeal re-pick"
+                fin = ap["assessment"]
+                if fin.get("deteval") is not None:
+                    deteval = fin["deteval"]
+                    deteval["action"] = "re-picked" if deteval.get("hangs") else "ok"
+                if fin.get("threats") is not None:
+                    threats = fin["threats"]
+                    threats["action"] = ("warned" if (threats.get("has_threat")
+                                         and threats.get("avoidable"))
+                                         else ("unavoidable" if threats.get("has_threat") else "ok"))
+
         # blind-spot audit before committing
         audit = self.orch.audit_blind_spot(board, chosen_move, movetime=deep_mt)
 
@@ -480,6 +552,7 @@ class ChessCoach:
             "sandbox": sandbox,
             "deteval": deteval,
             "threats": threats,
+            "appeal": appeal,
             "concepts": concepts,
             "manifest": self.memory.manifest.to_dict(),
             "audit": audit,
