@@ -134,7 +134,7 @@
 
   <div class="panels">
     <div class="card">
-      <h2>Strategic Manifest <span id="mode" class="pill"></span></h2>
+      <h2>Strategic Manifest <span id="manifest-mode" class="pill"></span></h2>
       <div class="kv"><b>Opening</b><span id="m_open" class="muted">—</span></div>
       <div class="kv"><b>Theme</b><span id="m_theme">—</span></div>
       <div class="kv"><b>Goals</b><span id="m_goals" class="muted">—</span></div>
@@ -304,7 +304,7 @@ function renderState(){
   $('#m_targets').textContent=(m.targets||[]).join(' · ')||'to be identified';
   $('#m_king').textContent=m.king_safety||'—';
   $('#m_opp').textContent=m.opponent_intent||'—';
-  const mode=$('#mode');mode.textContent=m.mode||'';mode.className='pill '+(m.mode==='crisis'?'crisis':'');
+  const mode=$('#manifest-mode');mode.textContent=m.mode||'';mode.className='pill '+(m.mode==='crisis'?'crisis':'');
   $('#hist').textContent=histStr(ST.history_san);
   $('#hist').classList.toggle('muted',!(ST.history_san&&ST.history_san.length));
   if(ST.provider)$('#hp').textContent=ST.provider+' · sf ok';
