@@ -138,6 +138,12 @@ DEFAULTS: dict[str, Any] = {
              "checks": {"vision": True, "material": True, "fork": True},
              "max_appeals_per_turn": 4},
 
+    # Establishment fallback (replaces the old "give up -> Stockfish slate"). After
+    # `illegal_cap` illegal proposals (or a stall) the proposer is switched to picking
+    # from a random handful (<= `max_presented`) of the remaining legal moves; picks
+    # are gated and whittled until a clean slate is found. Gate appeals are unbounded.
+    "establish": {"illegal_cap": 5, "max_presented": 5},
+
     "server": {
         "host": "127.0.0.1",
         "port": 7801,

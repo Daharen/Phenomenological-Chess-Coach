@@ -39,6 +39,7 @@ from ..agents.player import OneOffPlayer
 from ..agents.evaluator import Evaluator
 from .memory import Memory
 from .appeal import run_appeal
+from .establish import run_establishment
 
 # Material values for the deterministic (non-Stockfish) leaf evaluation used by
 # the LLM-calculated sandbox. King excluded (never captured).
@@ -236,6 +237,50 @@ class ChessCoach:
         self.memory.persist()
         return {"ok": True, "turn": rec, "state": self.state()}
 
+    def _establish(self, board, note, target, mode):
+        """Build the candidate slate: free proposal -> constrained selection, each
+        candidate gated with unbounded first-pass appeals (control-flow in
+        game/establish.py). No Stockfish here -- that is only the no-LLM brain's
+        last resort, handled in engine_move."""
+        cfg = self.cfg
+        ecfg = cfg.raw.get("establish", {})
+        gcfg = cfg.raw.get("gate", {})
+        gate_on = gcfg.get("enabled", True) and mode in gcfg.get(
+            "modes", ["autonomous", "assist", "guided"])
+        gate_checks = tuple(k for k, v in gcfg.get(
+            "checks", {"vision": True, "material": True, "fork": True}).items() if v)
+        hang_thr = cfg.raw.get("deteval", {}).get("hang_threshold_cp", 100)
+        warn_thr = cfg.raw.get("threats", {}).get("warn_threshold_cp", 150)
+        legal = list(board.legal_moves)
+        all_ucis = [m.uci() for m in legal]
+        san_of = {m.uci(): board.san(m) for m in legal}
+
+        def _propose(ruled_out, chosen):
+            p = self.player.propose_one(board, note, ruled_out, chosen)
+            if p.move is None or p.move not in board.legal_moves:
+                return {"kind": "illegal", "raw": (p.raw or "").strip() or "?"}
+            return {"kind": "legal", "uci": p.move.uci(), "san": p.san,
+                    "rationale": p.rationale, "source": p.source}
+
+        def _gate(uci):
+            if not gate_on:
+                return {"flagged": False}
+            return gate_candidate(board, chess.Move.from_uci(uci), hang_thr, warn_thr, gate_checks)
+
+        def _appeal(uci, reason):
+            return self.player.appeal(board, note, san_of[uci], reason)
+
+        def _select(pairs):
+            res = self.player.select_from_legal(board, note, [p["san"] for p in pairs])
+            if not res:
+                return None
+            return {"uci": res["uci"], "reasoning": res.get("reasoning", "")}
+
+        return run_establishment(all_ucis, san_of, target, _propose, _gate, _appeal, _select,
+                                 illegal_cap=ecfg.get("illegal_cap", 5),
+                                 max_presented=ecfg.get("max_presented", 5),
+                                 no_prog_cap=cfg.sandbox.get("no_progress_cap", 8))
+
     # -- the engine's phenomenological turn ------------------------------------
     def engine_move(self, mode: str | None = None, sandbox_engine: str | None = None) -> dict:
         if self.board.is_game_over():
@@ -268,89 +313,52 @@ class ChessCoach:
         #      accumulate by trial (unbounded in intent; the finite move set
         #      converges -- the attempt backstop only guards against endless
         #      unparseable garbage). Stockfish is NOT used to fill the slate.
-        established: list[dict] = []
-        illegal_attempts: list[str] = []          # raw strings tried and found illegal
-        seen_illegal: set[str] = set()
-        attempts = 0
-        no_prog_cap = cfg.sandbox.get("no_progress_cap", 8)
-        # Deterministic candidate GATE (runs DURING establishment, per candidate):
-        # a proposed legal move that hangs a piece / material / walks into a fork is
-        # confronted with the proposer (first-pass appeal); if not defended it is
-        # rejected, banned, and a different move is proposed. Only survivors fill slots.
-        gate_rejected: list[dict] = []            # candidates eliminated by the gate
-        gate_banned: set[str] = set()             # their ucis, fed back to the proposer
-        gate_appeals_used = 0
-        gcfg = cfg.raw.get("gate", {})
-        gate_on = gcfg.get("enabled", True) and mode in gcfg.get(
+        # ---- Establishment: free proposal -> constrained selection, each candidate
+        #      GATED with unbounded first-pass appeals (see game/establish.py). Rejected
+        #      moves grow a bad-list fed back to the proposer. Stockfish is only a
+        #      last resort for the no-LLM brain / a totally empty result.
+        illegal_attempts: list[str] = []
+        gate_rejected: list[dict] = []
+        gate_appeals_made = 0
+        est_constrained = False
+        _gcfg = cfg.raw.get("gate", {})
+        gate_on = _gcfg.get("enabled", True) and mode in _gcfg.get(
             "modes", ["autonomous", "assist", "guided"])
-        gate_budget = gcfg.get("max_appeals_per_turn", 4)
-        gate_checks = tuple(k for k, v in gcfg.get(
-            "checks", {"vision": True, "material": True, "fork": True}).items() if v)
-        _hang_thr = cfg.raw.get("deteval", {}).get("hang_threshold_cp", 100)
-        _warn_thr = cfg.raw.get("threats", {}).get("warn_threshold_cp", 150)
+        established: list[dict] = []
         if llm:
-            stagnant = 0                          # consecutive attempts that added nothing new
-            while len(established) < target and attempts < max_attempts:
-                attempts += 1
-                chosen_ucis = [e["uci"] for e in established]
-                ruled_out = illegal_attempts + [r["san"] for r in gate_rejected]
-                prop = self.player.propose_one(board, note, ruled_out, chosen_ucis)
-                if prop.move is None or prop.move not in board.legal_moves:
-                    raw = (prop.raw or "").strip() or "?"
-                    if raw not in seen_illegal:   # a NEW illegal move -> progress
-                        seen_illegal.add(raw)
-                        illegal_attempts.append(raw)
-                        stagnant = 0
-                    else:
-                        stagnant += 1             # repeating the same reject -> no progress
-                    if stagnant >= no_prog_cap:
-                        break
-                    continue
-                uci = prop.move.uci()
-                if uci in {e["uci"] for e in established} or uci in gate_banned:
-                    stagnant += 1                 # already have it / already rejected; bounded
-                    if stagnant >= no_prog_cap:
-                        break
-                    continue
-                # ---- deterministic gate + first-pass appeal ----
-                gate = (gate_candidate(board, prop.move, _hang_thr, _warn_thr, gate_checks)
-                        if gate_on else {"flagged": False})
-                if gate["flagged"]:
-                    verdict = None
-                    if gate_appeals_used < gate_budget:
-                        gate_appeals_used += 1
-                        verdict = self.player.appeal(board, note, prop.san, gate["reason"])
-                    defended = bool(verdict and (not verdict.get("agree", True))
-                                    and verdict.get("plan"))
-                    if not defended:
-                        gate_rejected.append({
-                            "uci": uci, "san": prop.san, "proposal": prop.to_dict(),
-                            "reason": gate["reason"], "kinds": gate["kinds"],
-                            "appealed": verdict is not None, "verdict": verdict})
-                        gate_banned.add(uci)
-                        stagnant = 0             # a new bad move found+banned = progress
-                        continue
-                    # defended with a concrete plan -> override, accept as a candidate
-                    established.append({
-                        "uci": uci, "san": prop.san, "proposal": prop.to_dict(),
-                        "gate": {"flagged": True, "overridden": True,
-                                 "reason": gate["reason"], "kinds": gate["kinds"],
-                                 "override_plan": verdict.get("plan", "")}})
-                    stagnant = 0
-                    continue
-                established.append({"uci": uci, "san": prop.san, "proposal": prop.to_dict(),
-                                    "gate": {"flagged": False}})
-                stagnant = 0
-
-        established_source = "llm" if established else "fallback"
+            est = self._establish(board, note, target, mode)
+            established = est["established"]
+            illegal_attempts = est["illegal"]
+            gate_rejected = est["rejected"]
+            gate_appeals_made = est["appeals_made"]
+            est_constrained = est["constrained"]
+            if established:
+                established_source = "llm"
+            elif est["banned"]:
+                # Every move tried hung or forked and was conceded -> play the least-bad
+                # by 1-ply material safety (deterministic; no Stockfish).
+                from ..engine.deteval import move_safety
+                best = max(est["banned"],
+                           key=lambda u: move_safety(board, chess.Move.from_uci(u))["net_cp"])
+                bsan = board.san(chess.Move.from_uci(best))
+                established = [{"uci": best, "san": bsan,
+                                "proposal": {"uci": best, "san": bsan, "source": "least-bad",
+                                             "rationale": "least-bad move: every candidate was "
+                                                          "flagged and no safe option was found."}}]
+                established_source = "least-bad"
+            else:
+                established_source = "fallback"
+        else:
+            established_source = "fallback"
         if not established:
-            # No LLM (Stockfish-only brain) or the model produced nothing legal:
-            # fall back to a Stockfish candidate slate so a move can still be made.
+            # No LLM (Stockfish-only brain) or the model produced nothing at all:
+            # last-resort Stockfish slate so a move is always made.
             for mv in self.player.stockfish_top(board, n=target, class_depth=class_depth):
                 established.append({"uci": mv.uci(), "san": board.san(mv),
                                     "proposal": {"uci": mv.uci(), "san": board.san(mv),
                                                  "rationale": "Stockfish candidate (no LLM choices available).",
                                                  "source": "fallback"}})
+        attempts = len(illegal_attempts) + len(gate_rejected)
 
         # classify every established candidate (for display / gate / coaching);
         # this is never shown to the autonomous picker.
@@ -598,7 +606,8 @@ class ChessCoach:
             "threats": threats,
             "appeal": appeal,
             "gate": {"enabled": gate_on, "rejected": gate_rejected,
-                     "appeals_used": gate_appeals_used, "budget": gate_budget},
+                     "appeals_made": gate_appeals_made, "constrained": est_constrained,
+                     "source": established_source},
             "concepts": concepts,
             "manifest": self.memory.manifest.to_dict(),
             "audit": audit,

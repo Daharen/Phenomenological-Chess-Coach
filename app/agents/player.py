@@ -34,6 +34,9 @@ SYS_ONE = ("You are a chess player choosing ONE move from the position in front 
 SYS_CHOOSE = ("You are choosing which of YOUR OWN candidate moves to actually play, using "
               "your own judgment -- no engine help. Always answer in strict JSON.")
 
+SYS_CONSTRAINED = ("You proposed too many illegal moves, so you must now CHOOSE one move from a "
+                   "short list of LEGAL moves given to you. Pick the strongest. Answer in strict JSON only.")
+
 SYS_APPEAL = ("You are reconsidering ONE move you were about to play, after a strict, purely "
               "material safety check flagged it as losing material. Judge honestly from the "
               "board. If the check is right that the move simply drops material for nothing, "
@@ -154,6 +157,34 @@ class OneOffPlayer:
         if not agree and not plan:          # a bare disagree with no plan is not a defense
             agree = True
         return {"agree": bool(agree), "plan": plan, "raw": str(data)[:500]}
+
+    # -- constrained fallback: pick one move from a presented list of legal moves --
+    def select_from_legal(self, board: chess.Board, note: str, sans: list[str]) -> dict | None:
+        """After too many illegal proposals, the proposer must pick from a short list
+        of LEGAL moves we present (it now sees a move list -- a quality hit -- but the
+        pick is guaranteed legal). Returns {uci, reasoning} or None."""
+        if not self.client.available or not sans:
+            return None
+        parts = [
+            f"FEN: {board.fen()}",
+            f"You are playing {'White' if board.turn else 'Black'}; it is your move.",
+        ]
+        if board.is_check():
+            parts.append("You are in CHECK -- your move MUST get your king out of check.")
+        if note:
+            parts.append(f"General plan (a hint only): {note}")
+        parts.append("Choose the best move to play from EXACTLY this list of legal moves: "
+                     + ", ".join(sans) + ".")
+        parts.append('Respond as JSON: {"move":"<one of the listed moves>","rationale":'
+                     '"one short sentence"}. Only output JSON.')
+        data = self.client.chat_json(SYS_CONSTRAINED, "\n".join(parts),
+                                      temperature=0.4, max_tokens=220)
+        if not data:
+            return None
+        mv = parse_move(board, str(data.get("move", "")))
+        if mv is None:
+            return None
+        return {"uci": mv.uci(), "reasoning": str(data.get("rationale", "")).strip()}
 
     # -- Stockfish candidate slate (only when there is NO LLM) -----------------
     def stockfish_top(self, board: chess.Board, n: int = 3, class_depth: int = 12) -> list[chess.Move]:

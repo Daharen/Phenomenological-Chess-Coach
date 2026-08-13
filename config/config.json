@@ -67,6 +67,8 @@
 
   "gate": {"enabled": true, "modes": ["autonomous", "assist", "guided"], "checks": {"vision": true, "material": true, "fork": true}, "max_appeals_per_turn": 4},
 
+  "establish": {"illegal_cap": 5, "max_presented": 5},
+
   "server": {
     "host": "127.0.0.1",
     "port": 7801,

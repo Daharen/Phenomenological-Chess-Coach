@@ -373,7 +373,7 @@ function renderTurn(t){
   {
     const gj=t.gate||{}; const rej=gj.rejected||[];
     const overr=(t.established||[]).filter(e=>e.gate&&e.gate.overridden);
-    if(rej.length||overr.length){
+    if(rej.length||overr.length||gj.constrained||(gj.source&&gj.source!=='llm')){
       let rows=rej.map(r=>{
         const badge=r.appealed?'<span class="pill blunder">agreed \u2192 cut</span>'
                               :'<span class="pill mistake">cut (no appeal left)</span>';
@@ -381,7 +381,7 @@ function renderTurn(t){
       }).join('');
       rows+=overr.map(e=>`<div class="traj"><span class="mono">${escape(e.san)}</span> flagged (${escape(e.gate.reason||'')}) but <span class="pill best">kept on appeal</span>: ${escape(e.gate.override_plan||'')}</div>`).join('');
       html+=`<div class="cand" style="border-color:#5a1e1c"><b>Candidate gate</b> <span class="tag">first pass \u00b7 cut ${rej.length}${overr.length?(' \u00b7 kept '+overr.length):''}</span>
-        <div class="traj muted">Proposed moves that hang a piece/material or walk into a fork are eliminated before becoming candidates unless the proposer defends them.</div>${rows}</div>`;
+        <div class="traj muted">${gj.constrained?'<span class="pill mistake">constrained fallback</span> ':''}${(gj.source&&gj.source!=='llm')?('<span class="pill mistake">slate: '+escape(gj.source)+'</span> '):''}Proposed moves that hang a piece/material or walk into a fork are eliminated before becoming candidates unless the proposer defends them.</div>${rows}</div>`;
     }
   }
   // appeal step (module 3): confront-and-agree / re-pick
