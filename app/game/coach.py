@@ -31,6 +31,7 @@ from ..engine.classify import classify_move
 from ..engine.horizon import assess_horizon, consequence_line
 from ..engine.sandbox import run_sandbox
 from ..engine.concepts import detect_concepts
+from ..engine.gate import gate_candidate
 from ..engine.glossary import load_glossary
 from ..agents.base import make_client
 from ..agents.orchestrator import Orchestrator, _san_history
@@ -272,12 +273,28 @@ class ChessCoach:
         seen_illegal: set[str] = set()
         attempts = 0
         no_prog_cap = cfg.sandbox.get("no_progress_cap", 8)
+        # Deterministic candidate GATE (runs DURING establishment, per candidate):
+        # a proposed legal move that hangs a piece / material / walks into a fork is
+        # confronted with the proposer (first-pass appeal); if not defended it is
+        # rejected, banned, and a different move is proposed. Only survivors fill slots.
+        gate_rejected: list[dict] = []            # candidates eliminated by the gate
+        gate_banned: set[str] = set()             # their ucis, fed back to the proposer
+        gate_appeals_used = 0
+        gcfg = cfg.raw.get("gate", {})
+        gate_on = gcfg.get("enabled", True) and mode in gcfg.get(
+            "modes", ["autonomous", "assist", "guided"])
+        gate_budget = gcfg.get("max_appeals_per_turn", 4)
+        gate_checks = tuple(k for k, v in gcfg.get(
+            "checks", {"vision": True, "material": True, "fork": True}).items() if v)
+        _hang_thr = cfg.raw.get("deteval", {}).get("hang_threshold_cp", 100)
+        _warn_thr = cfg.raw.get("threats", {}).get("warn_threshold_cp", 150)
         if llm:
             stagnant = 0                          # consecutive attempts that added nothing new
             while len(established) < target and attempts < max_attempts:
                 attempts += 1
                 chosen_ucis = [e["uci"] for e in established]
-                prop = self.player.propose_one(board, note, illegal_attempts, chosen_ucis)
+                ruled_out = illegal_attempts + [r["san"] for r in gate_rejected]
+                prop = self.player.propose_one(board, note, ruled_out, chosen_ucis)
                 if prop.move is None or prop.move not in board.legal_moves:
                     raw = (prop.raw or "").strip() or "?"
                     if raw not in seen_illegal:   # a NEW illegal move -> progress
@@ -290,12 +307,39 @@ class ChessCoach:
                         break
                     continue
                 uci = prop.move.uci()
-                if uci in {e["uci"] for e in established}:
-                    stagnant += 1                 # already have it; keep asking, but bounded
+                if uci in {e["uci"] for e in established} or uci in gate_banned:
+                    stagnant += 1                 # already have it / already rejected; bounded
                     if stagnant >= no_prog_cap:
                         break
                     continue
-                established.append({"uci": uci, "san": prop.san, "proposal": prop.to_dict()})
+                # ---- deterministic gate + first-pass appeal ----
+                gate = (gate_candidate(board, prop.move, _hang_thr, _warn_thr, gate_checks)
+                        if gate_on else {"flagged": False})
+                if gate["flagged"]:
+                    verdict = None
+                    if gate_appeals_used < gate_budget:
+                        gate_appeals_used += 1
+                        verdict = self.player.appeal(board, note, prop.san, gate["reason"])
+                    defended = bool(verdict and (not verdict.get("agree", True))
+                                    and verdict.get("plan"))
+                    if not defended:
+                        gate_rejected.append({
+                            "uci": uci, "san": prop.san, "proposal": prop.to_dict(),
+                            "reason": gate["reason"], "kinds": gate["kinds"],
+                            "appealed": verdict is not None, "verdict": verdict})
+                        gate_banned.add(uci)
+                        stagnant = 0             # a new bad move found+banned = progress
+                        continue
+                    # defended with a concrete plan -> override, accept as a candidate
+                    established.append({
+                        "uci": uci, "san": prop.san, "proposal": prop.to_dict(),
+                        "gate": {"flagged": True, "overridden": True,
+                                 "reason": gate["reason"], "kinds": gate["kinds"],
+                                 "override_plan": verdict.get("plan", "")}})
+                    stagnant = 0
+                    continue
+                established.append({"uci": uci, "san": prop.san, "proposal": prop.to_dict(),
+                                    "gate": {"flagged": False}})
                 stagnant = 0
 
         established_source = "llm" if established else "fallback"
@@ -553,6 +597,8 @@ class ChessCoach:
             "deteval": deteval,
             "threats": threats,
             "appeal": appeal,
+            "gate": {"enabled": gate_on, "rejected": gate_rejected,
+                     "appeals_used": gate_appeals_used, "budget": gate_budget},
             "concepts": concepts,
             "manifest": self.memory.manifest.to_dict(),
             "audit": audit,

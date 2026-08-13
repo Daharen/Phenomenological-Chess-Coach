@@ -130,6 +130,14 @@ DEFAULTS: dict[str, Any] = {
     # max_appeals. `modes` lists the selection modes the appeal runs in.
     "appeal": {"enabled": True, "max_appeals": 2, "modes": ["autonomous"]},
 
+    # Candidate GATE (runs during establishment, per candidate). Absolute per-move
+    # checks eliminate hanging/forking moves before they fill a slot; a flagged move
+    # gets one first-pass appeal to the proposer (defend with a plan -> override).
+    "gate": {"enabled": True,
+             "modes": ["autonomous", "assist", "guided"],
+             "checks": {"vision": True, "material": True, "fork": True},
+             "max_appeals_per_turn": 4},
+
     "server": {
         "host": "127.0.0.1",
         "port": 7801,

@@ -65,6 +65,8 @@
 
   "appeal": {"enabled": true, "max_appeals": 2, "modes": ["autonomous"]},
 
+  "gate": {"enabled": true, "modes": ["autonomous", "assist", "guided"], "checks": {"vision": true, "material": true, "fork": true}, "max_appeals_per_turn": 4},
+
   "server": {
     "host": "127.0.0.1",
     "port": 7801,
