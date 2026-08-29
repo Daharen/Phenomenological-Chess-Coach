@@ -1,0 +1,67 @@
+name: Build Stockfish DoubleMove
+
+on:
+  push:
+    branches:
+      - experiment/stockfish-doublemove
+    paths:
+      - 'tools/patch_stockfish_doublemove.py'
+      - '.github/workflows/build-stockfish-doublemove.yml'
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout harness branch
+        uses: actions/checkout@v4
+        with:
+          path: harness
+
+      - name: Checkout official Stockfish
+        uses: actions/checkout@v4
+        with:
+          repository: official-stockfish/Stockfish
+          ref: 2edd935bbb3ea6e484a1700f582a95e0ee773ec2
+          path: stockfish
+
+      - name: Apply double-move patch
+        run: python3 harness/tools/patch_stockfish_doublemove.py stockfish
+
+      - name: Build x86-64
+        working-directory: stockfish/src
+        run: make -j2 build ARCH=x86-64
+
+      - name: Smoke test UCI option
+        working-directory: stockfish/src
+        run: |
+          printf 'uci\nquit\n' | ./stockfish | tee /tmp/uci.txt
+          grep -F 'option name DoubleMoveSide' /tmp/uci.txt
+
+      - name: Smoke test double white replay
+        working-directory: stockfish/src
+        run: |
+          printf 'setoption name DoubleMoveSide value white\nposition startpos moves e2e4 g1f3 e7e5\nd\nquit\n' | ./stockfish | tee /tmp/double.txt
+          grep -F 'Fen:' /tmp/double.txt
+
+      - name: Smoke test check forfeits second move
+        working-directory: stockfish/src
+        run: |
+          printf 'setoption name DoubleMoveSide value white\nposition fen 4k3/8/8/8/8/8/4R3/4K3 w - - 0 1 moves e2e7\nd\nquit\n' | ./stockfish | tee /tmp/check.txt
+          grep -F 'Fen:' /tmp/check.txt
+
+      - name: Package
+        run: |
+          mkdir -p out
+          cp stockfish/src/stockfish out/stockfish-doublemove-linux-x64
+          cp harness/tools/patch_stockfish_doublemove.py out/
+          (cd stockfish && git diff > ../out/stockfish-doublemove.patch)
+          printf '%s\n' 'Base: official-stockfish/Stockfish@2edd935bbb3ea6e484a1700f582a95e0ee773ec2' > out/BUILD_INFO.txt
+          printf '%s\n' 'UCI: setoption name DoubleMoveSide value white|black|none' >> out/BUILD_INFO.txt
+          printf '%s\n' 'Rule: first non-checking move by advantaged side retains the turn for one second move; check on first move ends turn immediately.' >> out/BUILD_INFO.txt
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stockfish-doublemove-linux-x64
+          path: out/
