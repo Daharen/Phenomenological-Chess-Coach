@@ -7,6 +7,12 @@ on:
     paths:
       - 'tools/patch_stockfish_doublemove.py'
       - '.github/workflows/build-stockfish-doublemove.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'tools/patch_stockfish_doublemove.py'
+      - '.github/workflows/build-stockfish-doublemove.yml'
   workflow_dispatch:
 
 jobs:
